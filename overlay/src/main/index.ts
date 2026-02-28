@@ -4,9 +4,10 @@
  * Stealth features:
  * - setContentProtection(true): hidden from screen share
  * - setAlwaysOnTop("screen-saver"): above all windows including fullscreen
- * - setIgnoreMouseEvents(true, { forward: true }): click-through with event forwarding
  * - app.dock.hide(): no Dock icon
  * - transparent, frameless window
+ *
+ * Window is interactive by default. Click-through is opt-in via settings.
  */
 
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard } from 'electron'
@@ -43,8 +44,8 @@ function createWindow(): void {
   // Above ALL windows including fullscreen
   mainWindow.setAlwaysOnTop(true, 'screen-saver')
 
-  // Click-through by default
-  mainWindow.setIgnoreMouseEvents(true, { forward: true })
+  // Window is interactive by default (NOT click-through)
+  // Click-through can be toggled via settings panel
 
   // Visible on all workspaces and fullscreen spaces
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
@@ -104,6 +105,16 @@ function registerHotkeys(): void {
     currentOpacity = Math.max(0.2, currentOpacity - 0.1)
     mainWindow?.setOpacity(currentOpacity)
   })
+
+  // Navigate answers: previous
+  globalShortcut.register('CommandOrControl+Left', () => {
+    mainWindow?.webContents.send('hotkey-action', 'prev-answer')
+  })
+
+  // Navigate answers: next
+  globalShortcut.register('CommandOrControl+Right', () => {
+    mainWindow?.webContents.send('hotkey-action', 'next-answer')
+  })
 }
 
 app.whenReady().then(async () => {
@@ -134,6 +145,23 @@ ipcMain.on('set-ignore-mouse', (_event, ignore: boolean) => {
 
 ipcMain.on('copy-to-clipboard', (_event, text: string) => {
   clipboard.writeText(text)
+})
+
+ipcMain.on('quit-app', () => {
+  app.quit()
+})
+
+ipcMain.on('set-opacity', (_event, opacity: number) => {
+  currentOpacity = Math.max(0.2, Math.min(1.0, opacity))
+  mainWindow?.setOpacity(currentOpacity)
+})
+
+ipcMain.on('set-click-through', (_event, enabled: boolean) => {
+  if (enabled) {
+    mainWindow?.setIgnoreMouseEvents(true, { forward: true })
+  } else {
+    mainWindow?.setIgnoreMouseEvents(false)
+  }
 })
 
 app.on('will-quit', () => {

@@ -1,18 +1,20 @@
 /**
  * Hook for handling hotkey actions forwarded from Electron main process via IPC.
+ * Accepts a map of action name to handler function.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
-export function useHotkeys(onCopyLastAnswer: () => void) {
+export function useHotkeys(handlers: Record<string, () => void>) {
+  const handlersRef = useRef(handlers)
+  handlersRef.current = handlers
+
   useEffect(() => {
     const api = window.electronAPI
-    if (!api) return
+    if (!api?.onHotkeyAction) return
 
     api.onHotkeyAction((action: string) => {
-      if (action === 'copy-last-answer') {
-        onCopyLastAnswer()
-      }
+      handlersRef.current[action]?.()
     })
-  }, [onCopyLastAnswer])
+  }, [])
 }

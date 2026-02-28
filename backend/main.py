@@ -247,5 +247,16 @@ async def get_status():
     }
 
 
+@app.post("/ask")
+async def ask_question(request: Request):
+    """Submit a manual text question for AI to answer."""
+    body = await request.json()
+    question = body.get("question", "").strip()
+    if not question:
+        return {"status": "error", "message": "Empty question"}
+    await on_question_detected(question)
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host=BACKEND_HOST, port=BACKEND_PORT)

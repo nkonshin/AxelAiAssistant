@@ -171,3 +171,168 @@ app = FastAPI(lifespan=lifespan)
 ### Ключевой урок
 
 Самая коварная ошибка — `ELECTRON_RUN_AS_NODE=1`. Она не выдаёт понятного сообщения, не логируется, и заставляет Electron молча работать как обычный Node.js. Если `require('electron').app === undefined` — первым делом проверяй переменные окружения.
+
+---
+
+## Session 2: Полный редизайн UI + фикс click-through
+
+### Контекст
+
+После первого успешного запуска стало очевидно, что UI нуждается в серьёзной переработке. Главная жалоба — **окно оверлея было полностью некликабельным**: нельзя перетащить, нажать кнопку, ввести текст.
+
+---
+
+## Проблема 4: Окно не реагирует на клики и перетаскивание
+
+### Симптом
+
+Overlay появляется на экране, контент отображается корректно, но:
+- Нельзя перетащить окно мышкой
+- Нельзя нажать ни на одну кнопку
+- Мышь проходит «сквозь» окно к приложениям за ним
+
+### Причина
+
+В `src/main/index.ts` при создании окна стоял вызов:
+
+```typescript
+mainWindow.setIgnoreMouseEvents(true, { forward: true })
+```
+
+Это включало режим **click-through по умолчанию** — все mouse events перенаправлялись на приложения под оверлеем. Задумка была правильной (невидимый ассистент не должен мешать), но реализация была слишком агрессивной: у пользователя не было способа взаимодействовать с самим оверлеем.
+
+### Решение
+
+1. **Убран `setIgnoreMouseEvents` из `createWindow()`** — окно теперь интерактивно по умолчанию
+2. **Click-through стал opt-in**: добавлен IPC хэндлер `set-click-through`, который включает/выключает прозрачность для кликов через тогл в настройках
+3. **Drag zone**: верхняя панель (TopBar) получила CSS-свойство `-webkit-app-region: drag`, а кнопки внутри неё — `no-drag`, что позволяет перетаскивать окно за шапку
+
+```typescript
+// IPC handler в main process
+ipcMain.on('set-click-through', (_event, enabled: boolean) => {
+  if (mainWindow) {
+    mainWindow.setIgnoreMouseEvents(enabled, { forward: true })
+  }
+})
+```
+
+4. **Умный click-through при открытых настройках**: когда пользователь открывает SettingsPanel, click-through автоматически отключается (даже если был включён), а при закрытии — восстанавливается предыдущее состояние
+
+---
+
+## Редизайн: от прототипа к полноценному UI
+
+### Что было
+
+Минималистичный набор компонентов без единого дизайн-языка:
+- `Overlay.tsx` — отображение ответа AI
+- `StatusBar.tsx` — индикаторы статуса
+- `Transcript.tsx` — панель транскрипции
+- `Controls.tsx` — кнопки управления
+
+### Что стало
+
+Полный редизайн в стиле **glassmorphism** с тёмной полупрозрачной палитрой:
+
+| Компонент | Описание |
+|---|---|
+| `TopBar.tsx` | Drag-зона с SVG-логотипом, анимированными точками записи, кнопками действий и меню настроек |
+| `InputBar.tsx` | Поле ручного ввода вопроса (POST /ask) |
+| `AnswerView.tsx` | Основная область: вопрос → ответ с markdown/code highlighting, мигающий курсор при стриминге |
+| `AnswerNav.tsx` | Навигация по истории ответов: ←/→, счётчик страниц, кнопка копирования |
+| `SettingsPanel.tsx` | Полноэкранная панель настроек: запись, прозрачность, автоответы, click-through, горячие клавиши, выход |
+
+### Дизайн-система
+
+CSS полностью переписан с custom properties:
+
+```css
+:root {
+  --bg-base: rgba(18, 18, 24, 0.88);
+  --bg-surface: rgba(255, 255, 255, 0.04);
+  --accent: #6e7bf2;
+  --accent-green: #34d399;
+  --accent-amber: #f59e0b;
+  --accent-red: #ff453a;
+  --border: rgba(255, 255, 255, 0.06);
+}
+```
+
+- Шрифты: **DM Sans** (UI) + **JetBrains Mono** (код) — подключены через Google Fonts CDN
+- Фон: `backdrop-filter: blur(24px) saturate(1.4)` — стекломорфный эффект
+- Анимации: пульсирующие точки записи (`dot-pulse`), мигающий курсор стриминга, slide-in настроек
+
+### Новые IPC-каналы
+
+| Канал | Направление | Назначение |
+|---|---|
+| `quit-app` | Renderer → Main | Закрыть приложение |
+| `set-opacity` | Renderer → Main | Установить прозрачность окна (0.2–1.0) |
+| `set-click-through` | Renderer → Main | Вкл/выкл click-through |
+
+### Новый бэкенд-эндпоинт
+
+```
+POST /ask  { "question": "текст" }
+```
+
+Позволяет задать вопрос вручную через InputBar, не дожидаясь аудио-детекции. Вопрос проходит тот же pipeline: `on_question_detected` → LLM → SSE → UI.
+
+### Новые горячие клавиши
+
+| Комбинация | Действие |
+|---|---|
+| `Cmd+←` | Предыдущий ответ |
+| `Cmd+→` | Следующий ответ |
+
+Добавлены поверх существующих `Cmd+Shift+*` комбинаций.
+
+### История ответов
+
+`useSSE` полностью переписан: вместо единичного `currentAnswer` теперь хранится массив `AnswerEntry[]` с навигацией:
+
+```typescript
+interface AnswerEntry {
+  question: string
+  answer: string
+  isComplete: boolean
+}
+```
+
+`viewIndex` указывает на текущий просматриваемый ответ. Методы `goNext()`, `goPrev()`, `goToLatest()` позволяют листать историю.
+
+### Фикс утечки IPC-слушателей
+
+В `useHotkeys` обнаружена проблема: каждый рендер добавлял новый listener на `hotkey-action` без удаления старого. Решение:
+
+```typescript
+onHotkeyAction: (callback) => {
+  ipcRenderer.removeAllListeners('hotkey-action')
+  ipcRenderer.on('hotkey-action', (_event, action) => callback(action))
+}
+```
+
+---
+
+## Итого: Session 2
+
+| Файл | Изменение |
+|---|---|
+| `src/main/index.ts` | Убран default click-through, добавлены IPC: quit/opacity/click-through, Cmd+←/→ |
+| `src/preload/index.ts` | 3 новых метода + removeAllListeners фикс |
+| `src/types/electron.d.ts` | Расширен ElectronAPI: quitApp, setOpacity, setClickThrough |
+| `src/styles/globals.css` | Полный редизайн: glassmorphism, анимации, markdown-стили |
+| `src/components/TopBar.tsx` | Новый — drag-зона, лого, кнопки |
+| `src/components/InputBar.tsx` | Новый — ручной ввод вопросов |
+| `src/components/AnswerView.tsx` | Новый — markdown-рендер ответов |
+| `src/components/AnswerNav.tsx` | Новый — навигация по истории |
+| `src/components/SettingsPanel.tsx` | Новый — настройки, тогглы, горячие клавиши |
+| `src/hooks/useSSE.ts` | Переписан: AnswerEntry[], навигация |
+| `src/hooks/useHotkeys.ts` | Переписан: map action→handler |
+| `src/App.tsx` | Полная переработка с новой архитектурой компонентов |
+| `src/index.html` | DM Sans + JetBrains Mono fonts |
+| `backend/main.py` | POST /ask endpoint |
+
+### Ключевой урок
+
+`setIgnoreMouseEvents(true)` — мощный инструмент stealth-режима, но его нельзя включать по умолчанию без механизма переключения. Пользователь должен иметь возможность взаимодействовать с оверлеем «из коробки», а click-through — это opt-in фича для моментов, когда нужна полная прозрачность.

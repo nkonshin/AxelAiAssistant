@@ -63,12 +63,16 @@ class AudioCapture:
 
     async def start(self):
         """Start capturing both audio streams."""
-        loop = asyncio.get_event_loop()
         self._mic_queue = janus.Queue()
         self._system_queue = janus.Queue()
 
-        mic_idx = self.find_device("MacBook")
-        blackhole_idx = self.find_device("BlackHole")
+        try:
+            mic_idx = self.find_device("MacBook")
+        except ValueError:
+            # Fallback: try "Built-in" for older Macs
+            mic_idx = self.find_device("Built-in")
+
+        blackhole_idx = self.find_device("BlackHole")  # Raises if not installed
 
         self._mic_native_rate = self._get_device_rate(mic_idx)
         self._system_native_rate = self._get_device_rate(blackhole_idx)

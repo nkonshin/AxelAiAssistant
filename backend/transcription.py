@@ -58,26 +58,43 @@ class DeepgramTranscriber:
             await self.ws.send(audio_bytes)
 
     async def _receive_loop(self, label: str):
-        """Receive and process responses from Deepgram."""
-        try:
-            async for msg in self.ws:
-                data = json.loads(msg)
+        """Receive and process responses from Deepgram with auto-reconnect."""
+        max_retries = 5
+        retry_delay = 1.0
 
-                # Final transcript of a complete phrase
-                if data.get("is_final") and data.get("speech_final"):
-                    alt = data.get("channel", {}).get("alternatives", [{}])[0]
-                    transcript = alt.get("transcript", "")
-                    if transcript.strip():
-                        await self.on_transcript(label, 0, transcript)
+        for attempt in range(max_retries):
+            try:
+                async for msg in self.ws:
+                    data = json.loads(msg)
 
-                # Utterance end — long pause in speech
-                if data.get("type") == "UtteranceEnd":
-                    await self.on_utterance_end(label)
+                    # Final transcript of a complete phrase
+                    if data.get("is_final") and data.get("speech_final"):
+                        alt = data.get("channel", {}).get("alternatives", [{}])[0]
+                        transcript = alt.get("transcript", "")
+                        if transcript.strip():
+                            await self.on_transcript(label, 0, transcript)
 
-        except websockets.exceptions.ConnectionClosed as e:
-            logger.warning(f"Deepgram WebSocket closed [{label}]: {e}")
-        except Exception as e:
-            logger.error(f"Deepgram receive error [{label}]: {e}")
+                    # Utterance end — long pause in speech
+                    if data.get("type") == "UtteranceEnd":
+                        await self.on_utterance_end(label)
+
+                # Clean exit
+                break
+
+            except websockets.exceptions.ConnectionClosed as e:
+                logger.warning(f"Deepgram WebSocket closed [{label}]: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Reconnecting [{label}] in {retry_delay}s (attempt {attempt + 1})...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 10.0)
+                    try:
+                        await self.connect(label)
+                    except Exception:
+                        continue
+                break
+            except Exception as e:
+                logger.error(f"Deepgram receive error [{label}]: {e}")
+                break
 
     async def close(self):
         """Gracefully close the WebSocket connection."""

@@ -32,8 +32,11 @@ export function startBackend(): void {
 
   console.log(`[Backend] Starting: ${pythonPath} ${backendPath}`)
 
+  const env = { ...process.env }
+  delete env.ELECTRON_RUN_AS_NODE
+
   pythonProcess = spawn(pythonPath, [backendPath], {
-    env: { ...process.env },
+    env,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
 

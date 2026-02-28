@@ -11,19 +11,11 @@
 
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard } from 'electron'
 import { join } from 'path'
-import { startBackend, stopBackend, waitForBackend } from './child_process'
+import { startBackend, stopBackend, waitForBackend } from './child_process.js'
 
 let mainWindow: BrowserWindow | null = null
 let isRecording = false
 let currentOpacity = 0.85
-
-// Hide from Dock on macOS
-if (process.platform === 'darwin') {
-  app.dock.hide()
-}
-
-// Obscure process name
-app.setName('System Helper')
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -61,7 +53,7 @@ function createWindow(): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../../src/index.html'))
   }
 }
 
@@ -115,6 +107,14 @@ function registerHotkeys(): void {
 }
 
 app.whenReady().then(async () => {
+  // Hide from Dock on macOS
+  if (process.platform === 'darwin') {
+    app.dock.hide()
+  }
+
+  // Obscure process name
+  app.setName('System Helper')
+
   // Start Python backend
   startBackend()
 

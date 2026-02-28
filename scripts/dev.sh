@@ -26,8 +26,10 @@ for i in $(seq 1 50); do
 done
 
 # Start Electron overlay
+# Unset ELECTRON_RUN_AS_NODE — some tools set this, which breaks Electron
 echo "Starting Electron overlay..."
 cd "$PROJECT_DIR/overlay"
+unset ELECTRON_RUN_AS_NODE
 npm run dev &
 OVERLAY_PID=$!
 

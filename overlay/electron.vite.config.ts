@@ -1,5 +1,9 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   main: {
@@ -15,9 +19,13 @@ export default defineConfig({
     },
   },
   renderer: {
+    root: 'src',
     plugins: [react()],
     build: {
-      outDir: 'out/renderer',
+      outDir: resolve(__dirname, 'out/renderer'),
+      rollupOptions: {
+        input: resolve(__dirname, 'src/index.html'),
+      },
     },
   },
 })

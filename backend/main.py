@@ -2,13 +2,17 @@
 Entry point: wires all modules together and starts FastAPI server.
 
 Pipeline:
-  AudioCapture → DeepgramTranscriber → QuestionDetector → LLMClient → SSE → Electron
+  AudioCapture -> DeepgramTranscriber -> QuestionDetector -> LLMClient -> SSE -> Electron
 """
 
 import asyncio
 import uuid
 import logging
+from contextlib import asynccontextmanager
 import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from sse_starlette.sse import EventSourceResponse
 
 from config import (
     OPENAI_API_KEY, DEEPGRAM_API_KEY,
@@ -20,7 +24,7 @@ from question_detector import QuestionDetector
 from llm_client import LLMClient
 from screenshot import ScreenshotCapture
 from context_manager import ContextManager
-from routes import app, emit_event
+from routes import sse_queue, emit_event
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -113,6 +117,55 @@ async def audio_to_deepgram(queue, transcriber: DeepgramTranscriber):
             await asyncio.sleep(0.1)
 
 
+# --- Lifespan ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown lifecycle."""
+    logger.info(f"Backend starting on {BACKEND_HOST}:{BACKEND_PORT}")
+    if not OPENAI_API_KEY or not DEEPGRAM_API_KEY:
+        logger.warning("Missing API keys — some features will not work")
+    try:
+        devices = audio.list_input_devices()
+        logger.info(f"Available audio devices: {[d['name'] for d in devices]}")
+    except Exception as e:
+        logger.warning(f"Could not list audio devices: {e}")
+    yield
+    # Shutdown
+    if audio.is_recording:
+        audio.stop()
+        await transcriber_system.close()
+        await transcriber_mic.close()
+    logger.info("Backend shut down")
+
+
+# --- FastAPI app ---
+
+app = FastAPI(title="Interview Assistant", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+@app.get("/stream")
+async def stream(request: Request):
+    """SSE stream for the Electron overlay."""
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = await asyncio.wait_for(sse_queue.get(), timeout=30)
+                yield event
+            except asyncio.TimeoutError:
+                yield {"event": "ping", "data": ""}
+
+    return EventSourceResponse(event_generator())
+
+
 @app.post("/start")
 async def start_recording():
     """Start audio capture and transcription."""
@@ -192,29 +245,6 @@ async def get_status():
         "exchanges_count": len(context.exchanges),
         "transcript_lines": len(context.full_transcript),
     }
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Log startup info and validate configuration."""
-    logger.info(f"Backend starting on {BACKEND_HOST}:{BACKEND_PORT}")
-    if not OPENAI_API_KEY or not DEEPGRAM_API_KEY:
-        logger.warning("Missing API keys — some features will not work")
-    try:
-        devices = audio.list_input_devices()
-        logger.info(f"Available audio devices: {[d['name'] for d in devices]}")
-    except Exception as e:
-        logger.warning(f"Could not list audio devices: {e}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up resources on shutdown."""
-    if audio.is_recording:
-        audio.stop()
-        await transcriber_system.close()
-        await transcriber_mic.close()
-    logger.info("Backend shut down")
 
 
 if __name__ == "__main__":

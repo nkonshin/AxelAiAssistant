@@ -86,6 +86,7 @@ function EditableSection({
   endpoint,
   uploadEndpoint,
   resetEndpoint,
+  processEndpoint,
   placeholder,
   isOpen,
 }: {
@@ -94,6 +95,7 @@ function EditableSection({
   endpoint: string
   uploadEndpoint: string
   resetEndpoint: string
+  processEndpoint?: string
   placeholder: string
   isOpen: boolean
 }) {
@@ -135,16 +137,34 @@ function EditableSection({
     setSaving(true)
     setSaveStatus('idle')
     try {
-      const res = await fetch(`${BACKEND_URL}/settings/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      })
-      if (res.ok) {
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus('idle'), 2000)
+      if (processEndpoint && content.trim()) {
+        // Process through LLM first, then save
+        const res = await fetch(`${BACKEND_URL}/settings/${processEndpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+        const data = await res.json()
+        if (data.status === 'ok' && data.content) {
+          setContent(data.content)
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } else {
+          setSaveStatus('error')
+        }
       } else {
-        setSaveStatus('error')
+        // Save as-is
+        const res = await fetch(`${BACKEND_URL}/settings/${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+        if (res.ok) {
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2000)
+        } else {
+          setSaveStatus('error')
+        }
       }
     } catch {
       setSaveStatus('error')
@@ -231,7 +251,7 @@ function EditableSection({
               onClick={handleSave}
               disabled={saving || uploading}
             >
-              {saving ? 'Сохранение...' : 'Сохранить'}
+              {saving ? (processEndpoint ? 'AI обрабатывает...' : 'Сохранение...') : 'Сохранить'}
             </button>
             <input
               ref={fileInputRef}
@@ -487,6 +507,7 @@ export function SettingsPanel({
             endpoint="job"
             uploadEndpoint="job/upload"
             resetEndpoint="job/reset"
+            processEndpoint="job/process"
             placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
             isOpen={isOpen}
           />

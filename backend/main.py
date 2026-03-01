@@ -363,6 +363,23 @@ async def reset_profile():
     return {"status": "ok", "content": content}
 
 
+@app.post("/settings/job/process")
+async def process_job(request: Request):
+    """Process job description text through LLM, save structured result."""
+    body = await request.json()
+    raw = body.get("content", "").strip()
+    if not raw:
+        return {"status": "error", "message": "Empty content"}
+    try:
+        result = await llm.format_document(raw_text=raw, doc_type="job")
+    except Exception as e:
+        logger.error(f"Job processing failed: {e}")
+        return {"status": "error", "message": str(e)}
+    _write_md_file("job_description.md", result)
+    llm.reload_system_prompt()
+    return {"status": "ok", "content": result}
+
+
 @app.post("/settings/job/reset")
 async def reset_job():
     """Reset job description to example template."""

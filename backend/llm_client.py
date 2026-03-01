@@ -124,7 +124,7 @@ class LLMClient:
         stream = await client.chat.completions.create(
             model=use_model,
             messages=messages,
-            max_tokens=2048,
+            max_completion_tokens=2048,
             temperature=0.3,
             stream=True,
         )

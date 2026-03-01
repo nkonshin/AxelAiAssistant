@@ -126,8 +126,8 @@ app.whenReady().then(async () => {
   // Obscure process name
   app.setName('System Helper')
 
-  // Start Python backend
-  startBackend()
+  // Start Python backend (skips if already running, e.g. from dev.sh)
+  await startBackend()
 
   const backendReady = await waitForBackend()
   if (!backendReady) {

@@ -26,7 +26,25 @@ function findPython(): string {
   return venvPython
 }
 
-export function startBackend(): void {
+let externalBackend = false
+
+async function isBackendAlreadyUp(): Promise<boolean> {
+  try {
+    const res = await fetch('http://127.0.0.1:8765/health')
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function startBackend(): Promise<void> {
+  // Check if backend is already running (e.g. started by dev.sh)
+  if (await isBackendAlreadyUp()) {
+    console.log('[Backend] Already running on port 8765, skipping spawn')
+    externalBackend = true
+    return
+  }
+
   const backendPath = getBackendPath()
   const pythonPath = findPython()
 

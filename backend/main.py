@@ -6,12 +6,13 @@ Pipeline:
 """
 
 import asyncio
+import base64
 import os
 import uuid
 import logging
 from contextlib import asynccontextmanager
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -27,6 +28,7 @@ from question_detector import QuestionDetector
 from llm_client import LLMClient
 from screenshot import ScreenshotCapture
 from context_manager import ContextManager
+from file_parser import extract_text
 from routes import sse_queue, emit_event
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -350,6 +352,52 @@ async def set_job(request: Request):
     _write_md_file("job_description.md", content)
     llm.reload_system_prompt()
     return {"status": "ok"}
+
+
+# --- File upload with LLM processing ---
+
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
+
+
+async def _process_upload(file: UploadFile, doc_type: str, md_filename: str):
+    """Process an uploaded file: parse → LLM format → save .md."""
+    filename = file.filename or "unknown"
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
+        return {"status": "error", "message": f"Формат {ext} не поддерживается. Используйте PDF, DOC или DOCX."}
+
+    file_bytes = await file.read()
+    logger.info(f"Upload: {filename} ({len(file_bytes)} bytes)")
+
+    try:
+        if ext == ".pdf":
+            # Send PDF directly to LLM as base64
+            pdf_b64 = base64.b64encode(file_bytes).decode()
+            result = await llm.format_document(pdf_b64=pdf_b64, doc_type=doc_type)
+        else:
+            # Extract text from DOC/DOCX locally, then send to LLM
+            raw_text = extract_text(file_bytes, filename)
+            result = await llm.format_document(raw_text=raw_text, doc_type=doc_type)
+    except Exception as e:
+        logger.error(f"Upload processing failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+    _write_md_file(md_filename, result)
+    llm.reload_system_prompt()
+    return {"status": "ok", "content": result}
+
+
+@app.post("/settings/profile/upload")
+async def upload_profile(file: UploadFile = File(...)):
+    """Upload resume file, process with LLM, save as profile.md."""
+    return await _process_upload(file, "profile", "profile.md")
+
+
+@app.post("/settings/job/upload")
+async def upload_job(file: UploadFile = File(...)):
+    """Upload job description file, process with LLM, save as job_description.md."""
+    return await _process_upload(file, "job", "job_description.md")
 
 
 if __name__ == "__main__":

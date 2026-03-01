@@ -4,7 +4,7 @@
  * hotkeys reference, and quit button.
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 export interface LLMSettings {
   provider: string
@@ -79,17 +79,19 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   )
 }
 
-/** Editable markdown section with load/save */
+/** Editable markdown section with load/save and file upload */
 function EditableSection({
   title,
   subtitle,
   endpoint,
+  uploadEndpoint,
   placeholder,
   isOpen,
 }: {
   title: string
   subtitle: string
   endpoint: string
+  uploadEndpoint: string
   placeholder: string
   isOpen: boolean
 }) {
@@ -97,7 +99,9 @@ function EditableSection({
   const [content, setContent] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const [uploading, setUploading] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error' | 'uploaded'>('idle')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadContent = useCallback(() => {
     if (loaded) return
@@ -145,6 +149,34 @@ function EditableSection({
     setSaving(false)
   }
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setSaveStatus('idle')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`${BACKEND_URL}/settings/${uploadEndpoint}`, {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json()
+      if (data.status === 'ok' && data.content) {
+        setContent(data.content)
+        setSaveStatus('uploaded')
+        setTimeout(() => setSaveStatus('idle'), 3000)
+      } else {
+        setSaveStatus('error')
+      }
+    } catch {
+      setSaveStatus('error')
+    }
+    setUploading(false)
+    // Reset input so the same file can be re-uploaded
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   return (
     <div style={{ borderTop: '1px solid var(--border)' }}>
       <button
@@ -174,12 +206,34 @@ function EditableSection({
             <button
               className="save-btn"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || uploading}
             >
               {saving ? 'Сохранение...' : 'Сохранить'}
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <button
+              className="upload-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              {uploading ? 'AI обрабатывает...' : 'Загрузить файл'}
+            </button>
             {saveStatus === 'saved' && (
               <span className="text-[11px] text-[var(--accent-green)]">Сохранено</span>
+            )}
+            {saveStatus === 'uploaded' && (
+              <span className="text-[11px] text-[var(--accent-green)]">Загружено и обработано</span>
             )}
             {saveStatus === 'error' && (
               <span className="text-[11px] text-[var(--accent-red)]">Ошибка</span>
@@ -382,6 +436,7 @@ export function SettingsPanel({
             title="Профиль кандидата"
             subtitle="Резюме для системного промпта AI"
             endpoint="profile"
+            uploadEndpoint="profile/upload"
             placeholder={"# Профиль кандидата\n\n## Имя\n[Ваше имя]\n\n## Роль\nAI Engineer\n\n## Опыт\n- Python, Docker, LLM\n\n## Ключевые проекты\n..."}
             isOpen={isOpen}
           />
@@ -391,6 +446,7 @@ export function SettingsPanel({
             title="Вакансия"
             subtitle="Описание позиции для контекста AI"
             endpoint="job"
+            uploadEndpoint="job/upload"
             placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
             isOpen={isOpen}
           />

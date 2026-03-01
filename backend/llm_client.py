@@ -81,6 +81,58 @@ class LLMClient:
         except FileNotFoundError:
             return fallback
 
+    PROFILE_PROMPT = (
+        "Извлеки ключевую информацию из этого резюме/CV и оформи как структурированный "
+        "markdown-профиль кандидата для использования на техническом собеседовании. "
+        "Включи: имя, возраст (если есть), роль, годы опыта, ключевые навыки и технологии, "
+        "основные проекты (кратко: что делал, стек, результат), образование, языки. "
+        "Пиши на русском. Формат: заголовки ##, списки, без воды."
+    )
+
+    JOB_PROMPT = (
+        "Извлеки ключевую информацию из этого описания вакансии и оформи как структурированный "
+        "markdown для использования на техническом собеседовании. "
+        "Включи: компания, позиция, ключевые требования, стек технологий, описание задач. "
+        "Пиши на русском. Формат: заголовки ##, списки, без воды."
+    )
+
+    async def format_document(
+        self,
+        raw_text: str | None = None,
+        pdf_b64: str | None = None,
+        doc_type: str = "profile",
+    ) -> str:
+        """Process uploaded document through LLM and return structured markdown."""
+        client = self._get_client()
+        use_model = self.model
+        prompt = self.PROFILE_PROMPT if doc_type == "profile" else self.JOB_PROMPT
+
+        if pdf_b64:
+            # Send PDF directly to the model as base64 document
+            messages = [{"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "file", "file": {
+                    "filename": "document.pdf",
+                    "file_data": f"data:application/pdf;base64,{pdf_b64}",
+                }},
+            ]}]
+            use_model = self._get_vision_model()
+        else:
+            messages = [{"role": "user", "content": f"{prompt}\n\n---\n\n{raw_text}"}]
+
+        NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}
+        params = dict(
+            model=use_model,
+            messages=messages,
+            max_completion_tokens=2048,
+            stream=False,
+        )
+        if use_model not in NO_TEMPERATURE_MODELS:
+            params["temperature"] = 0.3
+
+        response = await client.chat.completions.create(**params)
+        return response.choices[0].message.content or ""
+
     def _get_vision_model(self) -> str:
         """Return the best vision-capable model for the current provider."""
         if self.provider == "claude":

@@ -80,7 +80,7 @@ class LLMClient:
         """Return the best vision-capable model for the current provider."""
         if self.provider == "claude":
             return "claude-sonnet-4-6"
-        return "gpt-4o"
+        return "gpt-5-mini"
 
     async def generate_answer(
         self,

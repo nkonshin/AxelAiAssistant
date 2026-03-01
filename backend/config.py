@@ -31,7 +31,7 @@ CLI_PROXY_URL = os.getenv("CLI_PROXY_URL", "http://localhost:8317/v1")
 CLI_PROXY_API_KEY = os.getenv("CLI_PROXY_API_KEY", "your-api-key-1")  # Must match api-keys in cliproxyapi.conf
 
 # Available models per provider
-OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
+OPENAI_MODELS = ["gpt-4o-mini", "gpt-5-mini", "gpt-5-nano"]
 CLAUDE_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5-20251001"]
 CLAUDE_MODEL_LABELS = {
     "claude-sonnet-4-6": "Sonnet 4.6",

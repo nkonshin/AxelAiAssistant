@@ -16,7 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from config import (
     OPENAI_API_KEY, DEEPGRAM_API_KEY,
-    LLM_PROVIDER, LLM_MODEL, CLI_PROXY_URL,
+    LLM_PROVIDER, LLM_MODEL, CLI_PROXY_URL, CLI_PROXY_API_KEY,
     OPENAI_MODELS, CLAUDE_MODELS, CLAUDE_MODEL_LABELS,
     BACKEND_HOST, BACKEND_PORT,
 )
@@ -40,7 +40,7 @@ if not DEEPGRAM_API_KEY:
 # Module instances
 audio = AudioCapture()
 context = ContextManager()
-llm = LLMClient(openai_api_key=OPENAI_API_KEY or "", cli_proxy_url=CLI_PROXY_URL)
+llm = LLMClient(openai_api_key=OPENAI_API_KEY or "", cli_proxy_url=CLI_PROXY_URL, cli_proxy_api_key=CLI_PROXY_API_KEY)
 llm.set_provider(LLM_PROVIDER, LLM_MODEL)
 screenshot_capture = ScreenshotCapture()
 

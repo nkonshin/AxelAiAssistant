@@ -3,6 +3,26 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Start CLIProxyAPI for Claude Max (if installed and not already running)
+CLIPROXY_PID=""
+if command -v cliproxyapi &>/dev/null; then
+    if ! curl -s http://localhost:8317/v1/models > /dev/null 2>&1; then
+        echo "Starting CLIProxyAPI..."
+        cliproxyapi > /dev/null 2>&1 &
+        CLIPROXY_PID=$!
+        sleep 1
+        if curl -s http://localhost:8317/v1/models > /dev/null 2>&1; then
+            echo "CLIProxyAPI is ready (Claude Max)"
+        else
+            echo "Warning: CLIProxyAPI failed to start — Claude provider won't work"
+        fi
+    else
+        echo "CLIProxyAPI already running"
+    fi
+else
+    echo "CLIProxyAPI not installed — Claude provider unavailable (brew install cliproxyapi)"
+fi
+
 # Start Python backend
 echo "Starting Python backend..."
 cd "$PROJECT_DIR/backend"
@@ -39,6 +59,7 @@ cleanup() {
     echo "Shutting down..."
     kill $OVERLAY_PID 2>/dev/null
     kill $BACKEND_PID 2>/dev/null
+    [ -n "$CLIPROXY_PID" ] && kill $CLIPROXY_PID 2>/dev/null
     wait 2>/dev/null
     echo "Done"
 }
@@ -47,6 +68,7 @@ trap cleanup EXIT INT TERM
 echo ""
 echo "=== Interview Assistant is running ==="
 echo "Backend:  http://127.0.0.1:8765"
+[ -n "$CLIPROXY_PID" ] && echo "Claude:   http://localhost:8317 (CLIProxyAPI)"
 echo "Press Ctrl+C to stop"
 echo ""
 

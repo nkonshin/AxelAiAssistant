@@ -15,14 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    def __init__(self, openai_api_key: str, cli_proxy_url: str):
+    def __init__(self, openai_api_key: str, cli_proxy_url: str, cli_proxy_api_key: str = "your-api-key-1"):
         # OpenAI client (direct API)
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
 
         # Claude client via CLIProxyAPI (OpenAI-compatible endpoint)
         self.claude_client = AsyncOpenAI(
             base_url=cli_proxy_url,
-            api_key="not-needed",  # CLIProxyAPI uses OAuth, no API key required
+            api_key=cli_proxy_api_key,
         )
 
         # Runtime settings (changed via POST /settings)
@@ -79,7 +79,7 @@ class LLMClient:
     def _get_vision_model(self) -> str:
         """Return the best vision-capable model for the current provider."""
         if self.provider == "claude":
-            return "claude-sonnet-4-20250514"
+            return "claude-sonnet-4-6"
         return "gpt-4o"
 
     async def generate_answer(

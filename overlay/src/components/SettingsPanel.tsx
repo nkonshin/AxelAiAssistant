@@ -1,9 +1,24 @@
 /**
- * Full-window settings overlay with transparency slider,
- * feature toggles, hotkeys reference, and quit button.
+ * Full-window settings overlay with LLM provider/model selector,
+ * transparency slider, feature toggles, hotkeys reference, and quit button.
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+export interface LLMSettings {
+  provider: string
+  model: string
+}
+
+interface LLMOptions {
+  provider: string
+  model: string
+  available: {
+    openai: string[]
+    claude: string[]
+  }
+  claude_labels: Record<string, string>
+}
 
 interface Props {
   isOpen: boolean
@@ -35,6 +50,13 @@ const HOTKEYS = [
   { keys: '&#8984;&#8592;&#8594;', desc: 'Предыдущий / следующий ответ' },
 ]
 
+const BACKEND_URL = 'http://127.0.0.1:8765'
+
+function getModelLabel(model: string, claudeLabels: Record<string, string>): string {
+  if (claudeLabels[model]) return claudeLabels[model]
+  return model
+}
+
 export function SettingsPanel({
   isOpen,
   onClose,
@@ -47,6 +69,48 @@ export function SettingsPanel({
   isRecording,
 }: Props) {
   const [hotkeysExpanded, setHotkeysExpanded] = useState(false)
+  const [llmOptions, setLlmOptions] = useState<LLMOptions | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState('openai')
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
+
+  // Load LLM settings when panel opens
+  useEffect(() => {
+    if (!isOpen) return
+    fetch(`${BACKEND_URL}/settings/llm`)
+      .then((r) => r.json())
+      .then((data: LLMOptions) => {
+        setLlmOptions(data)
+        setSelectedProvider(data.provider)
+        setSelectedModel(data.model)
+      })
+      .catch(() => {})
+  }, [isOpen])
+
+  const handleProviderChange = async (provider: string) => {
+    if (!llmOptions) return
+    const models = provider === 'claude' ? llmOptions.available.claude : llmOptions.available.openai
+    const model = models[0]
+    setSelectedProvider(provider)
+    setSelectedModel(model)
+    try {
+      await fetch(`${BACKEND_URL}/settings/llm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model }),
+      })
+    } catch {}
+  }
+
+  const handleModelChange = async (model: string) => {
+    setSelectedModel(model)
+    try {
+      await fetch(`${BACKEND_URL}/settings/llm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: selectedProvider, model }),
+      })
+    } catch {}
+  }
 
   const handleQuit = () => {
     window.electronAPI?.quitApp()
@@ -55,11 +119,15 @@ export function SettingsPanel({
   const handleToggleRecording = async () => {
     const endpoint = isRecording ? '/stop' : '/start'
     try {
-      await fetch(`http://127.0.0.1:8765${endpoint}`, { method: 'POST' })
-    } catch {
-      // ignore
-    }
+      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' })
+    } catch {}
   }
+
+  const currentModels = llmOptions
+    ? selectedProvider === 'claude'
+      ? llmOptions.available.claude
+      : llmOptions.available.openai
+    : []
 
   return (
     <div className={`settings-overlay ${isOpen ? 'open' : ''}`}>
@@ -87,6 +155,49 @@ export function SettingsPanel({
         {/* Settings content */}
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 py-4 space-y-5">
+
+            {/* LLM Provider */}
+            <div>
+              <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2.5">AI-провайдер</div>
+              <div className="flex gap-2">
+                <button
+                  className={`setting-chip ${selectedProvider === 'openai' ? 'active' : ''}`}
+                  onClick={() => handleProviderChange('openai')}
+                >
+                  OpenAI
+                </button>
+                <button
+                  className={`setting-chip ${selectedProvider === 'claude' ? 'active' : ''}`}
+                  onClick={() => handleProviderChange('claude')}
+                >
+                  Claude (Max)
+                </button>
+              </div>
+              {selectedProvider === 'claude' && (
+                <div className="text-[10px] text-[var(--text-tertiary)] mt-1.5">
+                  Через CLIProxyAPI на localhost:8317
+                </div>
+              )}
+            </div>
+
+            {/* Model selector */}
+            <div>
+              <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2.5">Модель</div>
+              <div className="flex flex-wrap gap-2">
+                {currentModels.map((m) => (
+                  <button
+                    key={m}
+                    className={`setting-chip ${selectedModel === m ? 'active' : ''}`}
+                    onClick={() => handleModelChange(m)}
+                  >
+                    {getModelLabel(m, llmOptions?.claude_labels || {})}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px -16px', width: 'calc(100% + 32px)' }} />
 
             {/* Recording toggle */}
             <div className="flex items-center justify-between">

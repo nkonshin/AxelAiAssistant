@@ -1,20 +1,47 @@
 """
-OpenAI GPT-4o streaming wrapper with vision support.
+LLM streaming wrapper with multi-provider support.
 
-Two modes:
-- gpt-4o-mini: fast answers for simple questions (<1s TTFT)
-- gpt-4o: code tasks, complex technical questions, screenshot analysis
+Providers:
+- openai: OpenAI API (GPT-4o, GPT-4o-mini) via API key
+- claude: Claude (Opus/Sonnet/Haiku) via CLIProxyAPI (Max subscription, OpenAI-compatible endpoint)
 """
 
 import os
+import logging
 from openai import AsyncOpenAI
 from typing import AsyncGenerator, Optional
 
+logger = logging.getLogger(__name__)
+
 
 class LLMClient:
-    def __init__(self, api_key: str):
-        self.client = AsyncOpenAI(api_key=api_key)
+    def __init__(self, openai_api_key: str, cli_proxy_url: str):
+        # OpenAI client (direct API)
+        self.openai_client = AsyncOpenAI(api_key=openai_api_key)
+
+        # Claude client via CLIProxyAPI (OpenAI-compatible endpoint)
+        self.claude_client = AsyncOpenAI(
+            base_url=cli_proxy_url,
+            api_key="not-needed",  # CLIProxyAPI uses OAuth, no API key required
+        )
+
+        # Runtime settings (changed via POST /settings)
+        self.provider = "openai"  # "openai" or "claude"
+        self.model = "gpt-4o-mini"
+
         self.system_prompt = self._build_system_prompt()
+
+    def _get_client(self) -> AsyncOpenAI:
+        """Return the active client based on current provider."""
+        if self.provider == "claude":
+            return self.claude_client
+        return self.openai_client
+
+    def set_provider(self, provider: str, model: str):
+        """Switch LLM provider and model at runtime."""
+        self.provider = provider
+        self.model = model
+        logger.info(f"LLM switched to {provider} / {model}")
 
     def _build_system_prompt(self) -> str:
         profile = self._load_file("profile.md",
@@ -49,14 +76,23 @@ class LLMClient:
         except FileNotFoundError:
             return fallback
 
+    def _get_vision_model(self) -> str:
+        """Return the best vision-capable model for the current provider."""
+        if self.provider == "claude":
+            return "claude-sonnet-4-20250514"
+        return "gpt-4o"
+
     async def generate_answer(
         self,
         question: str,
         context_history: list[dict],
-        model: str = "gpt-4o-mini",
+        model: str | None = None,
         screenshot_b64: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """Stream answer chunks from OpenAI."""
+        """Stream answer chunks from the active provider."""
+        client = self._get_client()
+        use_model = model or self.model
+
         messages = [{"role": "system", "content": self.system_prompt}]
 
         # Add conversation history
@@ -80,13 +116,13 @@ class LLMClient:
                     }},
                 ],
             })
-            model = "gpt-4o"  # Vision requires gpt-4o
+            use_model = self._get_vision_model()
         else:
             messages.append({"role": "user",
                              "content": f"Вопрос интервьюера: {question}"})
 
-        stream = await self.client.chat.completions.create(
-            model=model,
+        stream = await client.chat.completions.create(
+            model=use_model,
             messages=messages,
             max_tokens=2048,
             temperature=0.3,

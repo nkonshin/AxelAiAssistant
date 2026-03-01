@@ -224,9 +224,10 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .action-btn .shortcut {
-  font-size: 10px;
-  opacity: 0.5;
+  font-size: 11px;
+  opacity: 0.7;
   font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
 }
 
 /* ── Markdown answer ── */
@@ -336,10 +337,37 @@ input[type="range"]::-webkit-slider-thumb:hover {
   align-items: center;
   gap: 2px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  background: var(--bg-surface);
-  padding: 2px 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
   border-radius: 4px;
+  border: 1px solid var(--border-strong);
+}
+
+/* ── Setting chip (provider/model selector) ── */
+.setting-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: var(--bg-surface);
   border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.setting-chip:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.setting-chip.active {
+  background: rgba(245, 166, 35, 0.12);
+  border-color: var(--accent);
+  color: var(--accent);
 }

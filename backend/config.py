@@ -20,11 +20,23 @@ DEEPGRAM_LANGUAGE = "ru"
 DEEPGRAM_ENCODING = "linear16"
 DEEPGRAM_ENDPOINTING = 300
 
-# LLM settings
-LLM_MODEL_FAST = "gpt-4o-mini"
-LLM_MODEL_QUALITY = "gpt-4o"
+# LLM settings — defaults (can be changed at runtime via /settings)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")  # "openai" or "claude"
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 LLM_MAX_TOKENS = 2048
 LLM_TEMPERATURE = 0.3
+
+# CLIProxyAPI settings (for Claude via Max subscription)
+CLI_PROXY_URL = os.getenv("CLI_PROXY_URL", "http://localhost:8317/v1")
+
+# Available models per provider
+OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"]
+CLAUDE_MODELS = ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-haiku-4-5-20251001"]
+CLAUDE_MODEL_LABELS = {
+    "claude-sonnet-4-20250514": "Sonnet 4",
+    "claude-opus-4-20250514": "Opus 4",
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+}
 
 # Server settings
 BACKEND_HOST = "127.0.0.1"

@@ -16,7 +16,9 @@ from sse_starlette.sse import EventSourceResponse
 
 from config import (
     OPENAI_API_KEY, DEEPGRAM_API_KEY,
-    LLM_MODEL_FAST, BACKEND_HOST, BACKEND_PORT,
+    LLM_PROVIDER, LLM_MODEL, CLI_PROXY_URL,
+    OPENAI_MODELS, CLAUDE_MODELS, CLAUDE_MODEL_LABELS,
+    BACKEND_HOST, BACKEND_PORT,
 )
 from audio_capture import AudioCapture
 from transcription import DeepgramTranscriber
@@ -31,14 +33,15 @@ logger = logging.getLogger(__name__)
 
 # Validate API keys
 if not OPENAI_API_KEY:
-    logger.error("OPENAI_API_KEY not set — create .env file from .env.example")
+    logger.warning("OPENAI_API_KEY not set — OpenAI provider will not work")
 if not DEEPGRAM_API_KEY:
     logger.error("DEEPGRAM_API_KEY not set — create .env file from .env.example")
 
 # Module instances
 audio = AudioCapture()
 context = ContextManager()
-llm = LLMClient(api_key=OPENAI_API_KEY or "")
+llm = LLMClient(openai_api_key=OPENAI_API_KEY or "", cli_proxy_url=CLI_PROXY_URL)
+llm.set_provider(LLM_PROVIDER, LLM_MODEL)
 screenshot_capture = ScreenshotCapture()
 
 # Track current generation for cancellation
@@ -64,7 +67,6 @@ async def _generate_answer(question: str, answer_id: str, screenshot_b64: str | 
         async for chunk in llm.generate_answer(
             question=question,
             context_history=context.get_recent_context()[:-1],
-            model=LLM_MODEL_FAST,
             screenshot_b64=screenshot_b64,
         ):
             full_answer += chunk
@@ -256,6 +258,38 @@ async def ask_question(request: Request):
         return {"status": "error", "message": "Empty question"}
     await on_question_detected(question)
     return {"status": "ok"}
+
+
+@app.get("/settings/llm")
+async def get_llm_settings():
+    """Get current LLM provider, model, and available options."""
+    return {
+        "provider": llm.provider,
+        "model": llm.model,
+        "available": {
+            "openai": OPENAI_MODELS,
+            "claude": CLAUDE_MODELS,
+        },
+        "claude_labels": CLAUDE_MODEL_LABELS,
+    }
+
+
+@app.post("/settings/llm")
+async def set_llm_settings(request: Request):
+    """Change LLM provider and/or model at runtime."""
+    body = await request.json()
+    provider = body.get("provider", llm.provider)
+    model = body.get("model", llm.model)
+
+    if provider not in ("openai", "claude"):
+        return {"status": "error", "message": f"Unknown provider: {provider}"}
+
+    available = OPENAI_MODELS if provider == "openai" else CLAUDE_MODELS
+    if model not in available:
+        return {"status": "error", "message": f"Unknown model: {model}"}
+
+    llm.set_provider(provider, model)
+    return {"status": "ok", "provider": provider, "model": model}
 
 
 if __name__ == "__main__":

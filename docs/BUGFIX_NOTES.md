@@ -336,3 +336,65 @@ onHotkeyAction: (callback) => {
 ### Ключевой урок
 
 `setIgnoreMouseEvents(true)` — мощный инструмент stealth-режима, но его нельзя включать по умолчанию без механизма переключения. Пользователь должен иметь возможность взаимодействовать с оверлеем «из коробки», а click-through — это opt-in фича для моментов, когда нужна полная прозрачность.
+
+---
+
+## Session 3: Multi-provider LLM + улучшение читаемости горячих клавиш
+
+### Контекст
+
+Добавлена возможность использовать Claude через подписку Max (CLIProxyAPI) как альтернативу OpenAI API. Также исправлена плохая читаемость хоткеев в UI.
+
+---
+
+## Фича: Мульти-провайдер LLM (OpenAI + Claude Max)
+
+### Мотивация
+
+У пользователя есть подписка Claude Max, и он хочет использовать модели Claude (Opus/Sonnet/Haiku) без покупки API-ключа. Anthropic не предоставляет официальный API-доступ через Max подписку, но существует неофициальный инструмент **CLIProxyAPI** — Go-бинарник, который проксирует OAuth-авторизацию Max подписки и выставляет OpenAI-совместимый endpoint на `localhost:8317/v1`.
+
+### Реализация
+
+**Бэкенд:**
+
+- `config.py` — новые настройки: `LLM_PROVIDER` ("openai"/"claude"), `LLM_MODEL`, `CLI_PROXY_URL`, списки доступных моделей для каждого провайдера (`OPENAI_MODELS`, `CLAUDE_MODELS`, `CLAUDE_MODEL_LABELS`)
+- `llm_client.py` — полная переработка: два клиента `AsyncOpenAI` (один для OpenAI API, один для CLIProxyAPI с `base_url` и `api_key="not-needed"`), метод `set_provider()` для переключения на лету, автоматический выбор vision-модели по провайдеру
+- `main.py` — новые эндпоинты `GET /settings/llm` и `POST /settings/llm` для чтения и изменения провайдера/модели в runtime
+
+**Фронтенд:**
+
+- `SettingsPanel.tsx` — новая секция "LLM Provider & Model": chips для выбора провайдера (OpenAI / Claude Max) и модели, fetch настроек с бэкенда при открытии панели, мгновенное применение через POST
+
+**Конфигурация:**
+
+- `.env.example` — документация новых переменных (`LLM_PROVIDER`, `LLM_MODEL`, `CLI_PROXY_URL`)
+
+| Файл | Изменение |
+|---|---|
+| `backend/config.py` | Мульти-провайдер настройки, списки моделей |
+| `backend/llm_client.py` | Два AsyncOpenAI клиента, set_provider(), _get_vision_model() |
+| `backend/main.py` | GET/POST /settings/llm, обновлённая инициализация |
+| `overlay/src/components/SettingsPanel.tsx` | UI выбора провайдера и модели |
+| `.env.example` | Документация новых env-переменных |
+
+---
+
+## Фикс: Плохая читаемость горячих клавиш в UI
+
+### Симптом
+
+На кнопках «Спросить» и «Скриншот» и в empty state подсказке хоткеи были почти нечитаемы — слишком маленький шрифт, низкая непрозрачность и тёмный цвет на тёмном фоне.
+
+### Причина
+
+- `.action-btn .shortcut`: font-size 10px, opacity 0.5
+- `.kbd`: color `var(--text-tertiary)` (#48484a) — слишком тёмный на фоне `rgba(10, 10, 14, 0.92)`
+
+### Решение
+
+- `.shortcut`: размер 10→11px, opacity 0.5→0.7, добавлен явный `color: var(--text-secondary)`
+- `.kbd`: цвет `--text-tertiary`→`--text-secondary` (#8e8e93), размер 10→11px, усилен фон и бордер
+
+| Файл | Изменение |
+|---|---|
+| `overlay/src/styles/globals.css` | Улучшена видимость хоткеев + добавлены стили `.setting-chip` |

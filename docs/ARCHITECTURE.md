@@ -48,6 +48,8 @@ AI Interview Assistant — невидимый ассистент для техн
 | **Deepgram Nova-3** | Real-time транскрипция через WebSocket (русский язык) |
 | **OpenAI GPT-4o** | Генерация ответов + анализ скриншотов (Vision) |
 | **OpenAI GPT-4o-mini** | Быстрые ответы на простые вопросы |
+| **Claude Opus/Sonnet/Haiku** | Альтернативный LLM через CLIProxyAPI (Max подписка) |
+| **CLIProxyAPI** | Прокси для Claude Max подписки → OpenAI-совместимый endpoint |
 
 ### Системные зависимости (macOS)
 
@@ -183,13 +185,25 @@ AI Interview Assistant — невидимый ассистент для техн
 
 **Debounce 2 секунды** — защита от двойного срабатывания при медленной речи.
 
-### `llm_client.py` — OpenAI Streaming
+### `llm_client.py` — Мульти-провайдер LLM
 
-- `AsyncOpenAI` клиент с потоковой генерацией (`stream=True`)
-- Две модели: `gpt-4o-mini` (быстрые ответы, <1с TTFT) и `gpt-4o` (код, Vision)
+Поддерживает два провайдера, переключаемых на лету через UI настроек:
+
+**OpenAI** (API ключ):
+- Модели: `gpt-4o-mini` (быстрые ответы), `gpt-4o` (код, Vision)
+- Прямое подключение через `AsyncOpenAI`
+
+**Claude** (Max подписка через CLIProxyAPI):
+- Модели: Sonnet 4, Opus 4, Haiku 4.5
+- Подключение через `AsyncOpenAI(base_url="http://localhost:8317/v1")` — CLIProxyAPI выставляет OpenAI-совместимый эндпоинт, за которым стоит OAuth-токен Max подписки
+- При скриншоте — автоматически Sonnet 4 (лучший баланс скорости и vision)
+
+Общее:
+- Потоковая генерация (`stream=True`)
 - Скользящее окно контекста — последние 5 обменов (вопрос + ответ)
-- System prompt загружается из `profile.md` + `job_description.md`
-- При скриншоте — автоматическое переключение на `gpt-4o` с Vision
+- System prompt из `profile.md` + `job_description.md`
+- Метод `set_provider(provider, model)` для переключения без перезапуска
+- Эндпоинты: `GET /settings/llm` (текущие настройки), `POST /settings/llm` (смена провайдера/модели)
 
 ### `context_manager.py` — Управление контекстом
 

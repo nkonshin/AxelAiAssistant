@@ -95,13 +95,17 @@ class LLMClient:
 
         messages = [{"role": "system", "content": self.system_prompt}]
 
-        # Add conversation history
+        # Add conversation history (with what candidate actually said)
         for exchange in context_history:
             messages.append({"role": "user",
                              "content": f"Вопрос интервьюера: {exchange['question']}"})
             if exchange.get("answer"):
+                answer_content = exchange["answer"]
+                # Include what the candidate actually said for better context
+                if exchange.get("candidate_said"):
+                    answer_content += f"\n\n[Кандидат реально ответил: {exchange['candidate_said']}]"
                 messages.append({"role": "assistant",
-                                 "content": exchange["answer"]})
+                                 "content": answer_content})
 
         # Current question
         if screenshot_b64:

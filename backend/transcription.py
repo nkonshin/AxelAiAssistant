@@ -40,7 +40,7 @@ class DeepgramTranscriber:
             "&smart_format=true"
             "&interim_results=true"
             "&endpointing=300"
-            "&utterance_end_ms=1000"
+            "&utterance_end_ms=2000"
         )
         headers = {"Authorization": f"Token {self.api_key}"}
 

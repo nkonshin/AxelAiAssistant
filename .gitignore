@@ -32,3 +32,7 @@ Thumbs.db
 
 # Spec (private)
 CLAUDE.md
+
+# Personal data (profile, job description — use .example templates)
+backend/profile.md
+backend/job_description.md

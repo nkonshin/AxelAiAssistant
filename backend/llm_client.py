@@ -121,13 +121,19 @@ class LLMClient:
             messages.append({"role": "user",
                              "content": f"Вопрос интервьюера: {question}"})
 
-        stream = await client.chat.completions.create(
+        # GPT-5 mini/nano don't support custom temperature — only default (1)
+        NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}
+
+        params = dict(
             model=use_model,
             messages=messages,
             max_completion_tokens=2048,
-            temperature=0.3,
             stream=True,
         )
+        if use_model not in NO_TEMPERATURE_MODELS:
+            params["temperature"] = 0.3
+
+        stream = await client.chat.completions.create(**params)
 
         async for chunk in stream:
             delta = chunk.choices[0].delta

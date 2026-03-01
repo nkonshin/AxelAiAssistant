@@ -16,6 +16,10 @@ class ScreenshotCapture:
         """Capture the main display and return base64 JPEG."""
         img = ImageGrab.grab(all_screens=False)
 
+        # macOS returns RGBA — convert to RGB for JPEG
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
+
         # Resize Retina screenshots (e.g. 3456x2234 on M1)
         max_side = max(img.width, img.height)
         if max_side > 1920:

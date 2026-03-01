@@ -201,10 +201,17 @@ async def stop_recording():
 
 @app.post("/screenshot")
 async def take_screenshot():
-    """Capture screen and analyze with GPT-4o Vision."""
+    """Capture screen and analyze with Vision model."""
     global _current_generation
 
-    img_b64 = screenshot_capture.capture_full_screen()
+    try:
+        logger.info("Capturing screenshot...")
+        img_b64 = screenshot_capture.capture_full_screen()
+        logger.info(f"Screenshot captured ({len(img_b64)} bytes base64)")
+    except Exception as e:
+        logger.error(f"Screenshot capture failed: {e}")
+        await emit_event("status", {"type": "error", "message": f"Screenshot failed: {e}"})
+        return {"status": "error", "message": str(e)}
 
     question = "Проанализируй скриншот и помоги решить задачу."
     if question_detector.buffer:

@@ -354,6 +354,24 @@ async def set_job(request: Request):
     return {"status": "ok"}
 
 
+@app.post("/settings/profile/reset")
+async def reset_profile():
+    """Reset profile to example template."""
+    content = _read_md_file("profile.example.md")
+    _write_md_file("profile.md", content)
+    llm.reload_system_prompt()
+    return {"status": "ok", "content": content}
+
+
+@app.post("/settings/job/reset")
+async def reset_job():
+    """Reset job description to example template."""
+    content = _read_md_file("job_description.example.md")
+    _write_md_file("job_description.md", content)
+    llm.reload_system_prompt()
+    return {"status": "ok", "content": content}
+
+
 # --- File upload with LLM processing ---
 
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}

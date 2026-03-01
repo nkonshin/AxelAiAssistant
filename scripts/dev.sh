@@ -27,6 +27,7 @@ fi
 echo "Starting Python backend..."
 cd "$PROJECT_DIR/backend"
 source .venv/bin/activate 2>/dev/null || true
+pip install -q -r requirements.txt
 python3 main.py &
 BACKEND_PID=$!
 

@@ -455,3 +455,34 @@ input[type="range"]::-webkit-slider-thumb:hover {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Reset button ── */
+.reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reset-btn:hover {
+  color: var(--accent-red);
+  border-color: rgba(255, 69, 58, 0.3);
+  background: rgba(255, 69, 58, 0.06);
+}
+
+.reset-btn:active {
+  transform: scale(0.97);
+}
+
+.reset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

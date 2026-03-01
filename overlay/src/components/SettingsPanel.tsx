@@ -79,12 +79,13 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   )
 }
 
-/** Editable markdown section with load/save and file upload */
+/** Editable markdown section with load/save, file upload, and reset */
 function EditableSection({
   title,
   subtitle,
   endpoint,
   uploadEndpoint,
+  resetEndpoint,
   placeholder,
   isOpen,
 }: {
@@ -92,6 +93,7 @@ function EditableSection({
   subtitle: string
   endpoint: string
   uploadEndpoint: string
+  resetEndpoint: string
   placeholder: string
   isOpen: boolean
 }) {
@@ -100,7 +102,8 @@ function EditableSection({
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error' | 'uploaded'>('idle')
+  const [resetting, setResetting] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error' | 'uploaded' | 'reset'>('idle')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadContent = useCallback(() => {
@@ -177,6 +180,26 @@ function EditableSection({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  const handleReset = async () => {
+    if (!confirm('Сбросить на шаблон? Текущее содержимое будет потеряно.')) return
+    setResetting(true)
+    setSaveStatus('idle')
+    try {
+      const res = await fetch(`${BACKEND_URL}/settings/${resetEndpoint}`, { method: 'POST' })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        setContent(data.content || '')
+        setSaveStatus('reset')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        setSaveStatus('error')
+      }
+    } catch {
+      setSaveStatus('error')
+    }
+    setResetting(false)
+  }
+
   return (
     <div style={{ borderTop: '1px solid var(--border)' }}>
       <button
@@ -235,9 +258,24 @@ function EditableSection({
             {saveStatus === 'uploaded' && (
               <span className="text-[11px] text-[var(--accent-green)]">Загружено и обработано</span>
             )}
+            {saveStatus === 'reset' && (
+              <span className="text-[11px] text-[var(--text-secondary)]">Шаблон восстановлен</span>
+            )}
             {saveStatus === 'error' && (
               <span className="text-[11px] text-[var(--accent-red)]">Ошибка</span>
             )}
+            <button
+              className="reset-btn ml-auto"
+              onClick={handleReset}
+              disabled={resetting || uploading || saving}
+              title="Сбросить на шаблон"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 105.17-12.36L1 10" />
+              </svg>
+              {resetting ? 'Сброс...' : 'Сбросить'}
+            </button>
           </div>
         </div>
       )}
@@ -437,6 +475,7 @@ export function SettingsPanel({
             subtitle="Резюме для системного промпта AI"
             endpoint="profile"
             uploadEndpoint="profile/upload"
+            resetEndpoint="profile/reset"
             placeholder={"# Профиль кандидата\n\n## Имя\n[Ваше имя]\n\n## Роль\nAI Engineer\n\n## Опыт\n- Python, Docker, LLM\n\n## Ключевые проекты\n..."}
             isOpen={isOpen}
           />
@@ -447,6 +486,7 @@ export function SettingsPanel({
             subtitle="Описание позиции для контекста AI"
             endpoint="job"
             uploadEndpoint="job/upload"
+            resetEndpoint="job/reset"
             placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
             isOpen={isOpen}
           />

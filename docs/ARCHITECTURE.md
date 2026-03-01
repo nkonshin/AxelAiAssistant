@@ -203,7 +203,16 @@ AI Interview Assistant — невидимый ассистент для техн
 - Скользящее окно контекста — последние 5 обменов (вопрос + ответ)
 - System prompt из `profile.md` + `job_description.md`
 - Метод `set_provider(provider, model)` для переключения без перезапуска
+- Метод `reload_system_prompt()` — перестройка промпта после обновления profile/job файлов
+- Метод `format_document(raw_text, pdf_b64, doc_type)` — обработка загруженных файлов через LLM (не streaming)
 - Эндпоинты: `GET /settings/llm` (текущие настройки), `POST /settings/llm` (смена провайдера/модели)
+
+### `file_parser.py` — Парсинг документов (DOC/DOCX)
+
+Извлечение текста из загруженных файлов для обработки через LLM:
+- **DOCX**: `python-docx` (`Document(BytesIO(bytes))` → join paragraphs)
+- **DOC**: macOS встроенный `textutil -convert txt -stdout` (0 внешних зависимостей)
+- **PDF**: не парсится локально — отправляется напрямую в LLM как base64
 
 ### `context_manager.py` — Управление контекстом
 
@@ -328,6 +337,12 @@ interface AnswerEntry {
 | `POST` | `/screenshot` | Скриншот + анализ AI |
 | `POST` | `/force-answer` | Принудительная генерация ответа по буферу транскрипции |
 | `POST` | `/ask` | Ручной ввод текстового вопроса (`{question: "..."}`) |
+| `GET` | `/settings/profile` | Получить текст профиля кандидата |
+| `POST` | `/settings/profile` | Сохранить профиль кандидата (`{content: "..."}`) |
+| `POST` | `/settings/profile/upload` | Загрузить резюме (PDF/DOC/DOCX) → LLM → profile.md |
+| `GET` | `/settings/job` | Получить описание вакансии |
+| `POST` | `/settings/job` | Сохранить описание вакансии (`{content: "..."}`) |
+| `POST` | `/settings/job/upload` | Загрузить описание вакансии (PDF/DOC/DOCX) → LLM → job_description.md |
 
 ---
 
@@ -363,7 +378,8 @@ AxelAiAssistant/
 │   ├── audio_capture.py     # Dual audio capture (mic + BlackHole)
 │   ├── transcription.py     # Deepgram WebSocket клиент
 │   ├── question_detector.py # Детекция вопросов (heuristics + debounce)
-│   ├── llm_client.py        # OpenAI GPT-4o streaming
+│   ├── llm_client.py        # OpenAI GPT-4o streaming + format_document()
+│   ├── file_parser.py       # Извлечение текста из DOC/DOCX
 │   ├── screenshot.py        # Захват экрана (Pillow)
 │   ├── context_manager.py   # История разговора
 │   ├── routes.py            # SSE queue + emit_event утилита

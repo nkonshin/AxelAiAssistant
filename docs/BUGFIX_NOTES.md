@@ -398,3 +398,27 @@ onHotkeyAction: (callback) => {
 | Файл | Изменение |
 |---|---|
 | `overlay/src/styles/globals.css` | Улучшена видимость хоткеев + добавлены стили `.setting-chip` |
+
+---
+
+## Session 4: Редактирование профиля/вакансии через UI + загрузка файлов
+
+### Коммит: Add profile and job description editing via Settings UI
+
+- Добавлены эндпоинты `GET/POST /settings/profile` и `GET/POST /settings/job` для чтения/записи `profile.md` и `job_description.md`
+- Метод `reload_system_prompt()` в `llm_client.py` — перестройка системного промпта после сохранения
+- Компонент `EditableSection` в `SettingsPanel.tsx` — раскрываемые секции с textarea, загрузка контента при раскрытии, сохранение через POST
+- CSS: `.settings-textarea`, `.save-btn`
+
+### Коммит: Add file upload (PDF/DOC/DOCX) with LLM processing for profile and job
+
+- Гибридный подход к обработке файлов:
+  - **PDF** → base64 → напрямую в LLM (как `type: "file"` с `file_data`)
+  - **DOCX** → `python-docx` → текст → LLM
+  - **DOC** → macOS `textutil` → текст → LLM
+- Новый модуль `backend/file_parser.py` — парсинг DOC/DOCX
+- Метод `format_document()` в `llm_client.py` — не-streaming вызов LLM с промптом для извлечения ключевой информации
+- Эндпоинты `POST /settings/profile/upload` и `POST /settings/job/upload` — `UploadFile` + `FormData`
+- Кнопка "Загрузить файл" в `EditableSection` — скрытый `<input type="file">`, состояние `uploading`, заполнение textarea результатом
+- CSS: `.upload-btn`
+- Зависимости: `python-docx`, `python-multipart`

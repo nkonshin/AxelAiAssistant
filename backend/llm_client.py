@@ -43,6 +43,11 @@ class LLMClient:
         self.model = model
         logger.info(f"LLM switched to {provider} / {model}")
 
+    def reload_system_prompt(self):
+        """Rebuild system prompt after profile/job file update."""
+        self.system_prompt = self._build_system_prompt()
+        logger.info("System prompt reloaded")
+
     def _build_system_prompt(self) -> str:
         profile = self._load_file("profile.md",
                                   fallback="AI-инженер, 7+ лет опыта, Python/FastAPI/Docker/LLM")

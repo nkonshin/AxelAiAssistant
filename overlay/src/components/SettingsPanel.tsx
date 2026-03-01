@@ -1,9 +1,10 @@
 /**
  * Full-window settings overlay with LLM provider/model selector,
- * transparency slider, feature toggles, hotkeys reference, and quit button.
+ * profile/job editor, transparency slider, feature toggles,
+ * hotkeys reference, and quit button.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 export interface LLMSettings {
   provider: string
@@ -55,6 +56,139 @@ const BACKEND_URL = 'http://127.0.0.1:8765'
 function getModelLabel(model: string, claudeLabels: Record<string, string>): string {
   if (claudeLabels[model]) return claudeLabels[model]
   return model
+}
+
+/** Chevron icon for collapsible sections */
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--text-tertiary)"
+      strokeWidth="2"
+      strokeLinecap="round"
+      style={{
+        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform 0.2s ease',
+      }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
+/** Editable markdown section with load/save */
+function EditableSection({
+  title,
+  subtitle,
+  endpoint,
+  placeholder,
+  isOpen,
+}: {
+  title: string
+  subtitle: string
+  endpoint: string
+  placeholder: string
+  isOpen: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [content, setContent] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+
+  const loadContent = useCallback(() => {
+    if (loaded) return
+    fetch(`${BACKEND_URL}/settings/${endpoint}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setContent(data.content || '')
+        setLoaded(true)
+      })
+      .catch(() => {})
+  }, [endpoint, loaded])
+
+  // Reset loaded state when panel closes
+  useEffect(() => {
+    if (!isOpen) {
+      setLoaded(false)
+      setExpanded(false)
+      setSaveStatus('idle')
+    }
+  }, [isOpen])
+
+  // Load content when section expands
+  useEffect(() => {
+    if (expanded && isOpen) loadContent()
+  }, [expanded, isOpen, loadContent])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveStatus('idle')
+    try {
+      const res = await fetch(`${BACKEND_URL}/settings/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      if (res.ok) {
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } else {
+        setSaveStatus('error')
+      }
+    } catch {
+      setSaveStatus('error')
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="text-left">
+          <span className="text-[13px] font-medium text-[var(--text-primary)]">{title}</span>
+          <div className="text-[10px] text-[var(--text-tertiary)] mt-0.5">{subtitle}</div>
+        </div>
+        <ChevronIcon expanded={expanded} />
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3">
+          <textarea
+            className="settings-textarea"
+            value={content}
+            onChange={(e) => {
+              setContent(e.target.value)
+              setSaveStatus('idle')
+            }}
+            placeholder={placeholder}
+            rows={8}
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              className="save-btn"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+            {saveStatus === 'saved' && (
+              <span className="text-[11px] text-[var(--accent-green)]">Сохранено</span>
+            )}
+            {saveStatus === 'error' && (
+              <span className="text-[11px] text-[var(--accent-red)]">Ошибка</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function SettingsPanel({
@@ -243,6 +377,24 @@ export function SettingsPanel({
             </div>
           </div>
 
+          {/* Profile section */}
+          <EditableSection
+            title="Профиль кандидата"
+            subtitle="Резюме для системного промпта AI"
+            endpoint="profile"
+            placeholder={"# Профиль кандидата\n\n## Имя\n[Ваше имя]\n\n## Роль\nAI Engineer\n\n## Опыт\n- Python, Docker, LLM\n\n## Ключевые проекты\n..."}
+            isOpen={isOpen}
+          />
+
+          {/* Job description section */}
+          <EditableSection
+            title="Вакансия"
+            subtitle="Описание позиции для контекста AI"
+            endpoint="job"
+            placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
+            isOpen={isOpen}
+          />
+
           {/* Hotkeys section */}
           <div style={{ borderTop: '1px solid var(--border)' }}>
             <button
@@ -250,21 +402,7 @@ export function SettingsPanel({
               onClick={() => setHotkeysExpanded(!hotkeysExpanded)}
             >
               <span className="text-[13px] font-medium text-[var(--text-primary)]">Горячие клавиши</span>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--text-tertiary)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                style={{
-                  transform: hotkeysExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s ease',
-                }}
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
+              <ChevronIcon expanded={hotkeysExpanded} />
             </button>
 
             {hotkeysExpanded && (

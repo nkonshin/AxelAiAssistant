@@ -371,3 +371,56 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── Settings textarea ── */
+.settings-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.settings-textarea:focus {
+  border-color: var(--border-strong);
+}
+
+.settings-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ── Save button ── */
+.save-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(245, 166, 35, 0.12);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.save-btn:hover {
+  background: rgba(245, 166, 35, 0.2);
+}
+
+.save-btn:active {
+  transform: scale(0.97);
+}
+
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

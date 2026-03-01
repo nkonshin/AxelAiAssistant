@@ -6,6 +6,7 @@ Pipeline:
 """
 
 import asyncio
+import os
 import uuid
 import logging
 from contextlib import asynccontextmanager
@@ -297,6 +298,58 @@ async def set_llm_settings(request: Request):
 
     llm.set_provider(provider, model)
     return {"status": "ok", "provider": provider, "model": model}
+
+
+# --- Profile & Job Description settings ---
+
+BACKEND_DIR = os.path.dirname(__file__)
+
+
+def _read_md_file(filename: str) -> str:
+    path = os.path.join(BACKEND_DIR, filename)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _write_md_file(filename: str, content: str):
+    path = os.path.join(BACKEND_DIR, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+@app.get("/settings/profile")
+async def get_profile():
+    """Get current candidate profile."""
+    return {"content": _read_md_file("profile.md")}
+
+
+@app.post("/settings/profile")
+async def set_profile(request: Request):
+    """Update candidate profile and reload system prompt."""
+    body = await request.json()
+    content = body.get("content", "")
+    _write_md_file("profile.md", content)
+    llm.reload_system_prompt()
+    return {"status": "ok"}
+
+
+@app.get("/settings/job")
+async def get_job():
+    """Get current job description."""
+    return {"content": _read_md_file("job_description.md")}
+
+
+@app.post("/settings/job")
+async def set_job(request: Request):
+    """Update job description and reload system prompt."""
+    body = await request.json()
+    content = body.get("content", "")
+    _write_md_file("job_description.md", content)
+    llm.reload_system_prompt()
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

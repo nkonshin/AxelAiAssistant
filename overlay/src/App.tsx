@@ -51,6 +51,12 @@ function App() {
     }
   }, [])
 
+  // Elaborate on selected text from AI answer
+  const handleElaborate = useCallback((selectedText: string) => {
+    const prompt = `Расскажи подробнее об этом из предыдущего ответа: «${selectedText}»`
+    handleManualQuestion(prompt)
+  }, [handleManualQuestion])
+
   // Opacity change -> IPC
   const handleOpacityChange = useCallback((value: number) => {
     setOpacity(value)
@@ -122,6 +128,7 @@ function App() {
       <AnswerView
         entry={currentEntry}
         pendingQuestion={pendingQuestion}
+        onElaborate={handleElaborate}
       />
 
       <AnswerNav

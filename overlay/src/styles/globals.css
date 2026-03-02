@@ -665,3 +665,45 @@ input[type="range"]::-webkit-slider-thumb:hover {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── Context menu (right-click on selected text) ── */
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  background: rgba(30, 30, 40, 0.95);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.context-menu-item:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.context-menu-item svg {
+  color: var(--accent-blue);
+  flex-shrink: 0;
+}

@@ -422,3 +422,48 @@ onHotkeyAction: (callback) => {
 - Кнопка "Загрузить файл" в `EditableSection` — скрытый `<input type="file">`, состояние `uploading`, заполнение textarea результатом
 - CSS: `.upload-btn`
 - Зависимости: `python-docx`, `python-multipart`
+
+---
+
+## Session 5: Whisper — миграция с faster-whisper на pywhispercpp
+
+### Контекст
+
+При добавлении локальной Whisper-транскрипции как альтернативы Deepgram возникли серьёзные проблемы с загрузкой модели. faster-whisper использует формат CTranslate2, модели скачиваются с HuggingFace Hub — и загрузка зависала на XET-бэкенде (HeadersTimeoutError, curl exit code 56). У пользователя уже была рабочая GGML-модель `ggml-large-v3-turbo.bin` (1.5 ГБ) от Superwhisper.
+
+### Коммит: Fix Whisper model loading: global cache, loading status, double-start guard
+
+- Глобальный кэш моделей `_model_cache` с concurrent-safe загрузкой через `asyncio.Event`
+- Статус загрузки через SSE event `status:loading` → UI toast
+- Защита от двойного старта: `if audio.is_recording: return error`
+- Non-blocking preload: модель грузится в фоне из `/settings/transcription` POST
+
+### Коммит: Fix Whisper model download: non-blocking load, local model support, status UI
+
+- `/start` теперь проверяет готовность модели вместо блокирующей загрузки
+- `has_local_model()` проверяет наличие файлов локально
+- `get_model_status()`: ready / loading / error / available / not_downloaded
+- UI в SettingsPanel показывает статус модели с цветовой индикацией
+
+### Коммит: Switch Whisper from faster-whisper to pywhispercpp (GGML/whisper.cpp)
+
+**Проблема**: faster-whisper (CTranslate2) не могла загрузить модель — HuggingFace XET-бэкенд зависал, curl обрывался.
+
+**Решение**: Миграция на pywhispercpp (whisper.cpp) — использует формат GGML, поддерживает Metal GPU на Apple Silicon, работает с существующей моделью от Superwhisper.
+
+**Изменения:**
+- `transcription_whisper.py` — полностью переписан:
+  - `from faster_whisper import WhisperModel` → `from pywhispercpp.model import Model`
+  - Поиск GGML-модели: `~/.axel-assistant/models/ggml-<name>.bin` → `~/Library/Application Support/superwhisper/ggml-<name>.bin` → auto-download
+  - `Model(path, language='ru', n_threads=6, redirect_whispercpp_logs_to="/dev/null")`
+  - `model.transcribe(float32_audio)` → `list[Segment]` с `.text`
+- `config.py` — дефолтная модель: `"base"` → `"large-v3-turbo"`
+- `requirements.txt` — `faster-whisper>=1.0.0` → `pywhispercpp>=1.4.0`
+
+**Результат**: модель загружается за 0.7с (Metal GPU, Apple M1 Max), без скачивания, без зависаний.
+
+| Файл | Изменение |
+|---|---|
+| `backend/transcription_whisper.py` | Полный rewrite: faster-whisper → pywhispercpp |
+| `backend/config.py` | Дефолт модели large-v3-turbo |
+| `backend/requirements.txt` | pywhispercpp вместо faster-whisper |

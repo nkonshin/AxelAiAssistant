@@ -24,6 +24,7 @@ AI Interview Assistant — невидимый ассистент для техн
 | **websockets** | 14.2+ | WebSocket клиент для Deepgram API |
 | **openai** | 1.59+ | GPT-4o / GPT-4o-mini стриминг |
 | **Pillow** | 11.1+ | Захват скриншотов экрана |
+| **pywhispercpp** | 1.4+ | Локальная Whisper-транскрипция (whisper.cpp, Metal GPU) |
 | **python-dotenv** | 1.0+ | Загрузка переменных окружения |
 
 ### Electron Overlay
@@ -46,6 +47,7 @@ AI Interview Assistant — невидимый ассистент для техн
 | Сервис | Назначение |
 |---|---|
 | **Deepgram Nova-3** | Real-time транскрипция через WebSocket (русский язык) |
+| **whisper.cpp (pywhispercpp)** | Локальная транскрипция через GGML-модели (Metal GPU) |
 | **OpenAI GPT-4o** | Генерация ответов + анализ скриншотов (Vision) |
 | **OpenAI GPT-4o-mini** | Быстрые ответы на простые вопросы |
 | **Claude Opus/Sonnet/Haiku** | Альтернативный LLM через CLIProxyAPI (Max подписка) |
@@ -173,6 +175,23 @@ AI Interview Assistant — невидимый ассистент для техн
 - `endpointing=300` — 300мс тишины = конец фразы
 - `utterance_end_ms=1000` — 1с тишины = конец высказывания (триггер для детектора)
 - **Auto-reconnect** с exponential backoff (до 5 попыток) при обрыве соединения
+
+### `transcription_whisper.py` — Локальная Whisper-транскрипция (pywhispercpp)
+
+Альтернативный транскрипционный движок без облачных API:
+
+- **Движок**: whisper.cpp через pywhispercpp — нативная поддержка Metal GPU на Apple Silicon
+- **Формат моделей**: GGML (`.bin` файлы)
+- **Поиск моделей** (по приоритету):
+  1. `~/.axel-assistant/models/ggml-<name>.bin` — явно скопированные
+  2. `~/Library/Application Support/superwhisper/ggml-<name>.bin` — из Superwhisper
+  3. Auto-download по имени модели через pywhispercpp
+- **Глобальный кэш**: модели загружаются один раз и хранятся в `_model_cache`
+- **Concurrent-safe загрузка**: `asyncio.Event` предотвращает параллельную загрузку одной модели
+- **VAD**: простой energy-based (RMS threshold) — определяет паузы в речи для `on_utterance_end`
+- **Буферизация**: аудио-чанки (100мс int16 PCM 16kHz) накапливаются, транскрибируются пачками
+- **Статусы модели**: ready / loading / error / available / not_downloaded
+- Переключение провайдера через UI: Settings → Transcription → Whisper/Deepgram
 
 ### `question_detector.py` — Детекция вопросов
 
@@ -319,7 +338,7 @@ interface AnswerEntry {
 | `ai_answer_start` | `{question, id}` | Начало генерации ответа |
 | `ai_answer_chunk` | `{text, id}` | Фрагмент ответа (streaming) |
 | `ai_answer_end` | `{full_answer, id}` | Генерация завершена |
-| `status` | `{type, message}` | Статусы: recording, stopped, error |
+| `status` | `{type, message}` | Статусы: recording, stopped, error, loading, model_ready |
 | `ping` | `""` | Keepalive каждые 30с |
 
 ---
@@ -343,6 +362,10 @@ interface AnswerEntry {
 | `GET` | `/settings/job` | Получить описание вакансии |
 | `POST` | `/settings/job` | Сохранить описание вакансии (`{content: "..."}`) |
 | `POST` | `/settings/job/upload` | Загрузить описание вакансии (PDF/DOC/DOCX) → LLM → job_description.md |
+| `GET` | `/settings/llm` | Текущие настройки LLM (провайдер, модель) |
+| `POST` | `/settings/llm` | Сменить LLM провайдер/модель |
+| `GET` | `/settings/transcription` | Настройки транскрипции (провайдер, модель Whisper, статус) |
+| `POST` | `/settings/transcription` | Сменить транскрипционный провайдер (Deepgram/Whisper) |
 
 ---
 
@@ -377,6 +400,7 @@ AxelAiAssistant/
 │   ├── config.py            # Конфигурация, загрузка .env
 │   ├── audio_capture.py     # Dual audio capture (mic + BlackHole)
 │   ├── transcription.py     # Deepgram WebSocket клиент
+│   ├── transcription_whisper.py # Локальная Whisper-транскрипция (pywhispercpp/GGML)
 │   ├── question_detector.py # Детекция вопросов (heuristics + debounce)
 │   ├── llm_client.py        # OpenAI GPT-4o streaming + format_document()
 │   ├── file_parser.py       # Извлечение текста из DOC/DOCX

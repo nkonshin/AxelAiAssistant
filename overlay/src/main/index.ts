@@ -31,6 +31,7 @@ function log(msg: string): void {
 let mainWindow: BrowserWindow | null = null
 let isRecording = false
 let currentOpacity = 0.85
+let isClickThrough = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -91,6 +92,21 @@ function registerHotkeys(): void {
     } catch (e) {
       console.error('[Hotkey] Recording toggle failed:', e)
     }
+    // Ensure window stays interactive after hotkey (fixes macOS transparent window focus loss)
+    if (!isClickThrough) {
+      mainWindow?.setIgnoreMouseEvents(false)
+    }
+  })
+
+  // Toggle click-through (Cmd+Shift+T)
+  globalShortcut.register('CommandOrControl+Shift+T', () => {
+    isClickThrough = !isClickThrough
+    if (isClickThrough) {
+      mainWindow?.setIgnoreMouseEvents(true, { forward: true })
+    } else {
+      mainWindow?.setIgnoreMouseEvents(false)
+    }
+    log(`[Hotkey] Click-through: ${isClickThrough}`)
   })
 
   // Force answer
@@ -181,6 +197,7 @@ ipcMain.on('set-opacity', (_event, opacity: number) => {
 })
 
 ipcMain.on('set-click-through', (_event, enabled: boolean) => {
+  isClickThrough = enabled
   if (enabled) {
     mainWindow?.setIgnoreMouseEvents(true, { forward: true })
   } else {

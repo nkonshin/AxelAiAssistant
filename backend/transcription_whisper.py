@@ -13,6 +13,7 @@ GGML models are loaded from (in priority order):
 
 import asyncio
 import logging
+import re
 import numpy as np
 from pathlib import Path
 from typing import Callable, Optional
@@ -28,6 +29,26 @@ SILENCE_RMS_THRESHOLD = 300  # RMS below this = silence
 SILENCE_CHUNKS_FOR_UTTERANCE_END = 15  # 15 * 100ms = 1.5s silence → utterance end
 MIN_SPEECH_CHUNKS = 5  # At least 500ms of speech to trigger transcription
 PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
+
+# Known Whisper hallucination patterns (model artifacts from YouTube training data)
+_HALLUCINATION_PATTERNS = [
+    re.compile(r"продолжение\s+следует", re.IGNORECASE),
+    re.compile(r"субтитры\s+(сделал|делал|создал|подготовил)\s+\w+", re.IGNORECASE),
+    re.compile(r"подписывайтесь\s+на\s+канал", re.IGNORECASE),
+    re.compile(r"ставьте\s+лайк", re.IGNORECASE),
+    re.compile(r"редактор\s+субтитров", re.IGNORECASE),
+    re.compile(r"www\.\w+\.\w+", re.IGNORECASE),
+    re.compile(r"\.{3,}"),  # Repeated ellipsis (...)
+]
+
+
+def _is_hallucination(text: str) -> bool:
+    """Check if text matches known Whisper hallucination patterns."""
+    for pattern in _HALLUCINATION_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
 
 # Global model cache: {model_name: Model}
 _model_cache: dict = {}
@@ -88,6 +109,8 @@ def _do_load_model(model_name: str):
         print_realtime=False,
         print_timestamps=False,
         language="ru",
+        initial_prompt="Техническое собеседование по программированию. Python, Docker, FastAPI, LLM.",
+        no_speech_thold=0.5,  # Stricter no-speech threshold (default 0.6) to reduce hallucinations
     )
     local_path = _find_ggml_file(model_name)
     if local_path:
@@ -228,7 +251,15 @@ class WhisperTranscriber:
 
         # Combine chunks into numpy float32 array (whisper.cpp expects float32)
         raw = b"".join(chunks)
-        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        audio_int16 = np.frombuffer(raw, dtype=np.int16)
+
+        # Check buffer energy: skip if mostly silence (prevents hallucinations on quiet audio)
+        rms = int(np.sqrt(np.mean(audio_int16.astype(np.float64) ** 2)))
+        if rms < SILENCE_RMS_THRESHOLD:
+            logger.debug(f"[{self._label}] skipping quiet buffer (RMS={rms})")
+            return
+
+        audio = audio_int16.astype(np.float32) / 32768.0
 
         if len(audio) < SAMPLE_RATE * 0.3:  # Skip < 300ms
             return
@@ -240,6 +271,10 @@ class WhisperTranscriber:
             texts = [s.text.strip() for s in segments if s.text.strip()]
             if texts:
                 full_text = " ".join(texts)
+                # Filter out known Whisper hallucinations
+                if _is_hallucination(full_text):
+                    logger.info(f"[{self._label}] filtered hallucination: {full_text[:60]}")
+                    return
                 logger.info(f"[{self._label}] whisper: {full_text[:80]}")
                 await self.on_transcript(self._label, 0, full_text)
         except Exception as e:

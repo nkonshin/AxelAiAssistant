@@ -226,12 +226,9 @@ body {
 .transcript-panel {
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
-  max-height: 140px;
 }
 
-.transcript-scroll {
-  max-height: 140px;
-  overflow-y: auto;
+.transcript-compact {
   padding: 6px 10px;
   display: flex;
   flex-direction: column;
@@ -247,36 +244,30 @@ body {
   color: var(--text-tertiary);
 }
 
-.transcript-msg {
+.transcript-line {
   display: flex;
+  align-items: center;
   gap: 6px;
   font-size: 12px;
   line-height: 1.4;
-  align-items: baseline;
 }
 
-.transcript-label {
+.transcript-dot {
   flex-shrink: 0;
-  font-weight: 700;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  line-height: 1.4;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
 }
 
-.transcript-msg.int .transcript-label {
-  color: #ffb340;
-  background: rgba(255, 179, 64, 0.1);
-}
+.transcript-dot.int { background: #ffb340; }
+.transcript-dot.you { background: var(--accent-green); }
 
-.transcript-msg.you .transcript-label {
-  color: var(--accent-green);
-  background: rgba(48, 209, 88, 0.1);
-}
-
-.transcript-text {
+.transcript-text-truncate {
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── Toggle switch ── */
@@ -440,8 +431,25 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 10px 0 6px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--accent);
   line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-q-line {
+  padding-left: 8px;
+  border-left: 3px solid var(--accent);
+}
+
+.chat-q-line.int {
+  color: #ffb340;
+  border-left-color: #ffb340;
+}
+
+.chat-q-line.you {
+  color: var(--accent-green);
+  border-left-color: var(--accent-green);
 }
 
 .chat-answer {

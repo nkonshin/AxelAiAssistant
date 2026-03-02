@@ -16,6 +16,17 @@ interface Props {
   onElaborate?: (selectedText: string) => void
 }
 
+/** Parse question text into lines with source info. Strips [Интервьюер]/[Кандидат] labels. */
+function parseQuestionLines(text: string): { source: 'int' | 'you'; text: string }[] {
+  return text.split('\n').filter(Boolean).map((line) => {
+    const intMatch = line.match(/^\[Интервьюер\]:\s*(.+)/)
+    if (intMatch) return { source: 'int' as const, text: intMatch[1] }
+    const youMatch = line.match(/^\[Кандидат\]:\s*(.+)/)
+    if (youMatch) return { source: 'you' as const, text: youMatch[1] }
+    return { source: 'int' as const, text: line }
+  })
+}
+
 const mdComponents = {
   code({ className, children, ...props }: any) {
     const match = /language-(\w+)/.exec(className || '')
@@ -107,10 +118,14 @@ export function AnswerView({ answers, pendingQuestion, onElaborate }: Props) {
     >
       {answers.map((entry, i) => (
         <div key={i} className="chat-entry">
-          {/* Question */}
+          {/* Question lines with colored left borders */}
           {entry.question && (
             <div className="chat-question">
-              {entry.question}
+              {parseQuestionLines(entry.question).map((line, j) => (
+                <div key={j} className={`chat-q-line ${line.source}`}>
+                  {line.text}
+                </div>
+              ))}
             </div>
           )}
 
@@ -136,7 +151,13 @@ export function AnswerView({ answers, pendingQuestion, onElaborate }: Props) {
       {/* Pending question (before AI starts) */}
       {pendingQuestion && (
         <div className="chat-entry">
-          <div className="chat-question">{pendingQuestion}</div>
+          <div className="chat-question">
+            {parseQuestionLines(pendingQuestion).map((line, j) => (
+              <div key={j} className={`chat-q-line ${line.source}`}>
+                {line.text}
+              </div>
+            ))}
+          </div>
           <div className="chat-answer">
             <div className="flex items-center gap-2 text-[var(--text-tertiary)] text-[13px]">
               <span className="cursor-blink" />

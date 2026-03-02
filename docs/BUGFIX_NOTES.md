@@ -520,3 +520,24 @@ onHotkeyAction: (callback) => {
 | `overlay/src/styles/globals.css` | Стили чата |
 | `backend/transcription_whisper.py` | Shared model + lock, фильтр галлюцинаций, RMS threshold 80 |
 | `backend/question_detector.py` | Debounce 3s, reset на любую речь |
+
+---
+
+## Коммит: Stealth improvements — hide InputBar, 80% opacity, dynamic window size (`49e1b72`)
+
+### Проблема
+После часового теста скрин-шеринга в Яндекс.Телемост обнаружено:
+- Курсор I-beam (текстовый) виден на шеринге при наведении на InputBar
+- Окно слишком маленькое (500×700) и прижато к левому краю
+- Непрозрачность 85% избыточна
+
+### Решения
+- **InputBar скрыт по умолчанию** — убран из DOM, показывается по `Cmd+Shift+I`. Нет DOM-элемента `<input>` → нет курсора I-beam
+- **Opacity 0.85 → 0.80** — и в main process, и в React state
+- **Динамический размер окна** — 60% ширины экрана по центру, 50% высоты от верха. Используется `screen.getPrimaryDisplay().workAreaSize`
+
+### Файлы
+| Файл | Изменения |
+|---|---|
+| `overlay/src/main/index.ts` | `screen` import, dynamic size, opacity 0.80, `Cmd+Shift+I` hotkey |
+| `overlay/src/App.tsx` | `inputBarVisible` state (default false), hotkey handler, conditional render |

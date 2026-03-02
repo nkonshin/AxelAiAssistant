@@ -262,12 +262,16 @@ body {
 .transcript-dot.int { background: #ffb340; }
 .transcript-dot.you { background: var(--accent-green); }
 
-.transcript-text-truncate {
+/* Clip overflow from the LEFT so the most recent words are always visible.
+   Uses direction: rtl to make text-overflow: ellipsis clip the start. */
+.transcript-text-clip {
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  direction: rtl;
+  text-align: left;
 }
 
 /* ── Toggle switch ── */

@@ -23,7 +23,7 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <div className="drag-region flex items-center gap-3 px-4 py-3">
       {/* Logo + status */}
       <div className="flex items-center gap-2.5">
         {/* Waveform icon */}
@@ -46,8 +46,8 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
         </div>
       </div>
 
-      {/* Drag handle — only this empty space is draggable */}
-      <div className="drag-region flex-1" style={{ minHeight: 28 }} />
+      {/* Spacer — inherits drag from parent */}
+      <div className="flex-1" />
 
       {/* Action buttons — no-drag ensures they're not swallowed by the drag region */}
       <button

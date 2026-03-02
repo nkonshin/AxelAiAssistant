@@ -460,3 +460,17 @@ onHotkeyAction: (callback) => {
 | `overlay/src/styles/globals.css` | Стили `.action-btn.recording`, `no-drag` на `.action-btn` |
 | `backend/main.py` | Авто-preload Whisper модели при старте |
 | `backend/config.py` | Дефолтный провайдер: `deepgram` → `whisper` |
+
+---
+
+## Session 6 — Expand TopBar drag region
+
+### Проблема
+При стандартной ширине окна (500px) недостаточно свободного пространства в TopBar для перетаскивания окна. Drag-region был только на узком spacer между логотипом и кнопками — при малой ширине он сжимался почти до нуля.
+
+### Решение
+Весь контейнер TopBar стал `drag-region`, а кнопки сохраняют `no-drag` для кликабельности. Теперь перетаскивать можно за любую часть TopBar (логотип, отступы, промежутки между кнопками).
+
+| Файл | Изменение |
+|---|---|
+| `overlay/src/components/TopBar.tsx` | Родительский `<div>` → `drag-region`, spacer больше не отдельный drag |

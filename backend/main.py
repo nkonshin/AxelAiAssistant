@@ -25,7 +25,7 @@ from config import (
 )
 from audio_capture import AudioCapture
 from transcription import DeepgramTranscriber
-from transcription_whisper import WhisperTranscriber
+from transcription_whisper import WhisperTranscriber, preload_model
 from question_detector import QuestionDetector
 from llm_client import LLMClient
 from screenshot import ScreenshotCapture
@@ -221,15 +221,25 @@ async def _stop_recording():
 async def start_recording():
     """Start audio capture and transcription."""
     global transcriber_mic, transcriber_system
-    try:
-        await audio.start()
 
+    # Guard: don't start if already recording
+    if audio.is_recording:
+        return {"status": "error", "message": "Already recording"}
+
+    try:
         provider = _current_transcription_provider
         model = _current_whisper_model if provider == "whisper" else None
 
         # Validate Deepgram key
         if provider == "deepgram" and not DEEPGRAM_API_KEY:
             raise ValueError("DEEPGRAM_API_KEY not set in .env")
+
+        # Pre-load Whisper model before starting audio (can take minutes for large models)
+        if provider == "whisper":
+            await emit_event("status", {"type": "loading", "message": f"Загрузка модели Whisper ({model})..."})
+            await preload_model(model)
+
+        await audio.start()
 
         # Create and connect mic transcriber
         transcriber_mic = create_transcriber(provider, model)

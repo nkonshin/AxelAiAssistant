@@ -21,6 +21,40 @@ SILENCE_CHUNKS_FOR_UTTERANCE_END = 15  # 15 * 100ms = 1.5s silence → utterance
 MIN_SPEECH_CHUNKS = 5  # At least 500ms of speech to trigger transcription
 PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
 
+# Global model cache: {model_name: WhisperModel}
+_model_cache: dict = {}
+_model_loading: dict[str, asyncio.Event] = {}
+
+
+def _do_load_model(model_name: str):
+    """Load WhisperModel in a thread (blocking)."""
+    from faster_whisper import WhisperModel
+    return WhisperModel(model_name, device="cpu", compute_type="int8")
+
+
+async def preload_model(model_name: str) -> None:
+    """Pre-load a Whisper model into global cache. Safe to call concurrently."""
+    if model_name in _model_cache:
+        logger.info(f"Whisper model '{model_name}' already cached")
+        return
+
+    # If another coroutine is already loading this model, wait for it
+    if model_name in _model_loading:
+        logger.info(f"Waiting for Whisper model '{model_name}' (loading by another task)...")
+        await _model_loading[model_name].wait()
+        return
+
+    event = asyncio.Event()
+    _model_loading[model_name] = event
+    try:
+        logger.info(f"Loading Whisper model '{model_name}'...")
+        model = await asyncio.to_thread(_do_load_model, model_name)
+        _model_cache[model_name] = model
+        logger.info(f"Whisper model '{model_name}' loaded and cached")
+    finally:
+        event.set()
+        _model_loading.pop(model_name, None)
+
 
 class WhisperTranscriber:
     def __init__(
@@ -42,7 +76,7 @@ class WhisperTranscriber:
         self._utterance_ended = False
 
     async def connect(self, label: str = "system"):
-        """Load the Whisper model (lazy, first call only)."""
+        """Attach cached model and start processing."""
         self._label = label
         self._running = True
         self._buffer.clear()
@@ -50,22 +84,17 @@ class WhisperTranscriber:
         self._speech_count = 0
         self._utterance_ended = False
 
-        if self._model is None:
-            logger.info(f"Loading Whisper model '{self.model_name}' [{label}]...")
-            self._model = await asyncio.to_thread(self._load_model)
-            logger.info(f"Whisper model loaded [{label}]")
+        # Use globally cached model (must be preloaded before connect)
+        if self.model_name in _model_cache:
+            self._model = _model_cache[self.model_name]
+            logger.info(f"Whisper [{label}]: using cached model '{self.model_name}'")
         else:
-            logger.info(f"Whisper already loaded [{label}]")
+            # Fallback: load inline (shouldn't happen if preload was called)
+            logger.warning(f"Whisper [{label}]: model not pre-loaded, loading now...")
+            await preload_model(self.model_name)
+            self._model = _model_cache[self.model_name]
 
         self._process_task = asyncio.create_task(self._process_loop())
-
-    def _load_model(self):
-        from faster_whisper import WhisperModel
-        return WhisperModel(
-            self.model_name,
-            device="cpu",
-            compute_type="int8",
-        )
 
     async def send_audio(self, audio_bytes: bytes):
         """Buffer an audio chunk and track speech/silence."""

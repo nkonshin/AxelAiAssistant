@@ -18,6 +18,7 @@ function App() {
     isConnected,
     transcripts,
     error,
+    statusMessage,
     goNext,
     goPrev,
     clearError,
@@ -87,6 +88,13 @@ function App() {
         isConnected={isConnected}
         onMenuClick={() => setSettingsOpen(true)}
       />
+
+      {/* Status/loading toast */}
+      {statusMessage && (
+        <div className="status-toast">
+          <span className="status-toast-text">{statusMessage}</span>
+        </div>
+      )}
 
       {/* Error toast */}
       {error && (

@@ -28,6 +28,7 @@ interface SSEState {
   isRecording: boolean
   isConnected: boolean
   error: string | null
+  statusMessage: string | null
 }
 
 const BACKEND_URL = 'http://127.0.0.1:8765'
@@ -42,6 +43,7 @@ export function useSSE() {
     isRecording: false,
     isConnected: false,
     error: null,
+    statusMessage: null,
   })
 
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>()
@@ -111,12 +113,20 @@ export function useSSE() {
       const data = JSON.parse(e.data)
       setState((s) => {
         const updates: Partial<SSEState> = {}
-        // Only update isRecording on recording-specific events
-        if (data.type === 'recording') updates.isRecording = true
-        if (data.type === 'stopped') updates.isRecording = false
-        // Track errors
+        if (data.type === 'recording') {
+          updates.isRecording = true
+          updates.statusMessage = null
+        }
+        if (data.type === 'stopped') {
+          updates.isRecording = false
+          updates.statusMessage = null
+        }
+        if (data.type === 'loading') {
+          updates.statusMessage = data.message
+        }
         if (data.type === 'error') {
           updates.error = data.message
+          updates.statusMessage = null
         }
         return { ...s, ...updates }
       })

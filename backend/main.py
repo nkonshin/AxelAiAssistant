@@ -20,10 +20,12 @@ from config import (
     OPENAI_API_KEY, DEEPGRAM_API_KEY,
     LLM_PROVIDER, LLM_MODEL, CLI_PROXY_URL, CLI_PROXY_API_KEY,
     OPENAI_MODELS, CLAUDE_MODELS, CLAUDE_MODEL_LABELS,
+    TRANSCRIPTION_PROVIDER, WHISPER_MODEL, WHISPER_MODELS,
     BACKEND_HOST, BACKEND_PORT,
 )
 from audio_capture import AudioCapture
 from transcription import DeepgramTranscriber
+from transcription_whisper import WhisperTranscriber
 from question_detector import QuestionDetector
 from llm_client import LLMClient
 from screenshot import ScreenshotCapture
@@ -37,8 +39,8 @@ logger = logging.getLogger(__name__)
 # Validate API keys
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY not set — OpenAI provider will not work")
-if not DEEPGRAM_API_KEY:
-    logger.error("DEEPGRAM_API_KEY not set — create .env file from .env.example")
+if not DEEPGRAM_API_KEY and TRANSCRIPTION_PROVIDER == "deepgram":
+    logger.warning("DEEPGRAM_API_KEY not set — Deepgram transcription will not work")
 
 # Module instances
 audio = AudioCapture()
@@ -116,13 +118,24 @@ async def on_question_detected(question_text: str):
 
 question_detector = QuestionDetector(on_question_detected=on_question_detected)
 
-# Deepgram transcribers (two: mic and system audio)
-transcriber_system = DeepgramTranscriber(DEEPGRAM_API_KEY, on_transcript, on_utterance_end)
-transcriber_mic = DeepgramTranscriber(DEEPGRAM_API_KEY, on_transcript, on_utterance_end)
+# Transcribers (created on /start, not at import time)
+transcriber_mic = None
+transcriber_system = None
+_current_transcription_provider = TRANSCRIPTION_PROVIDER
+_current_whisper_model = WHISPER_MODEL
+_pump_tasks: list[asyncio.Task] = []
 
 
-async def audio_to_deepgram(queue, transcriber: DeepgramTranscriber, label: str = "?"):
-    """Pump audio chunks from capture queue to Deepgram WebSocket."""
+def create_transcriber(provider: str, model: str | None = None):
+    """Factory: create a transcriber based on provider."""
+    if provider == "whisper":
+        return WhisperTranscriber(model or _current_whisper_model, on_transcript, on_utterance_end)
+    else:
+        return DeepgramTranscriber(DEEPGRAM_API_KEY, on_transcript, on_utterance_end)
+
+
+async def audio_to_transcriber(queue, transcriber, label: str = "?"):
+    """Pump audio chunks from capture queue to transcriber."""
     chunk_count = 0
     while True:
         try:
@@ -151,13 +164,11 @@ async def lifespan(app: FastAPI):
         logger.info(f"Available audio devices: {[d['name'] for d in devices]}")
     except Exception as e:
         logger.warning(f"Could not list audio devices: {e}")
+    logger.info(f"Transcription provider: {_current_transcription_provider}")
     yield
     # Shutdown
     if audio.is_recording:
-        audio.stop()
-        await transcriber_mic.close()
-        if audio.has_system_audio:
-            await transcriber_system.close()
+        await _stop_recording()
     logger.info("Backend shut down")
 
 
@@ -188,29 +199,61 @@ async def stream(request: Request):
     return EventSourceResponse(event_generator())
 
 
+async def _stop_recording():
+    """Internal: stop audio + close transcribers."""
+    global transcriber_mic, transcriber_system
+    # Cancel pump tasks
+    for t in _pump_tasks:
+        t.cancel()
+    _pump_tasks.clear()
+    # Stop audio capture
+    audio.stop()
+    # Close transcribers
+    if transcriber_mic:
+        await transcriber_mic.close()
+        transcriber_mic = None
+    if transcriber_system:
+        await transcriber_system.close()
+        transcriber_system = None
+
+
 @app.post("/start")
 async def start_recording():
     """Start audio capture and transcription."""
+    global transcriber_mic, transcriber_system
     try:
         await audio.start()
 
-        # Always connect mic transcriber
+        provider = _current_transcription_provider
+        model = _current_whisper_model if provider == "whisper" else None
+
+        # Validate Deepgram key
+        if provider == "deepgram" and not DEEPGRAM_API_KEY:
+            raise ValueError("DEEPGRAM_API_KEY not set in .env")
+
+        # Create and connect mic transcriber
+        transcriber_mic = create_transcriber(provider, model)
         await transcriber_mic.connect(label="mic")
-        asyncio.create_task(audio_to_deepgram(audio.mic_queue, transcriber_mic, "mic"))
+        _pump_tasks.append(
+            asyncio.create_task(audio_to_transcriber(audio.mic_queue, transcriber_mic, "mic"))
+        )
 
         # Connect system audio transcriber only if BlackHole is available
         if audio.has_system_audio:
+            transcriber_system = create_transcriber(provider, model)
             await transcriber_system.connect(label="system")
-            asyncio.create_task(audio_to_deepgram(audio.system_queue, transcriber_system, "system"))
+            _pump_tasks.append(
+                asyncio.create_task(audio_to_transcriber(audio.system_queue, transcriber_system, "system"))
+            )
             question_detector.mic_only_mode = False
-            mode = "mic + system"
+            mode = f"mic + system ({provider})"
         else:
             question_detector.mic_only_mode = True
-            mode = "mic only (BlackHole not found)"
+            mode = f"mic only ({provider})"
 
         await emit_event("status", {"type": "recording", "message": f"Recording: {mode}"})
         logger.info(f"Recording started: {mode}")
-        return {"status": "started", "mode": mode}
+        return {"status": "started", "mode": mode, "transcription": provider}
     except Exception as e:
         await emit_event("status", {"type": "error", "message": str(e)})
         logger.error(f"Start error: {e}")
@@ -220,10 +263,7 @@ async def start_recording():
 @app.post("/stop")
 async def stop_recording():
     """Stop audio capture and transcription."""
-    audio.stop()
-    await transcriber_mic.close()
-    if audio.has_system_audio:
-        await transcriber_system.close()
+    await _stop_recording()
     await emit_event("status", {"type": "stopped", "message": "Recording stopped"})
     logger.info("Recording stopped")
     return {"status": "stopped"}
@@ -332,6 +372,48 @@ async def set_llm_settings(request: Request):
         return {"status": "error", "message": "OPENAI_API_KEY not configured"}
 
     llm.set_provider(provider, model)
+    return {"status": "ok", "provider": provider, "model": model}
+
+
+# --- Transcription settings ---
+
+@app.get("/settings/transcription")
+async def get_transcription_settings():
+    """Get current transcription provider, model, and available options."""
+    return {
+        "provider": _current_transcription_provider,
+        "model": _current_whisper_model,
+        "available_models": WHISPER_MODELS,
+        "recording": audio.is_recording,
+    }
+
+
+@app.post("/settings/transcription")
+async def set_transcription_settings(request: Request):
+    """Change transcription provider and/or Whisper model at runtime."""
+    global _current_transcription_provider, _current_whisper_model
+    body = await request.json()
+    provider = body.get("provider", _current_transcription_provider)
+    model = body.get("model", _current_whisper_model)
+
+    if provider not in ("deepgram", "whisper"):
+        return {"status": "error", "message": f"Unknown provider: {provider}"}
+
+    if provider == "deepgram" and not DEEPGRAM_API_KEY:
+        return {"status": "error", "message": "DEEPGRAM_API_KEY not set in .env"}
+
+    if provider == "whisper" and model not in WHISPER_MODELS:
+        return {"status": "error", "message": f"Unknown Whisper model: {model}"}
+
+    _current_transcription_provider = provider
+    if provider == "whisper":
+        _current_whisper_model = model
+
+    # If recording, restart with new provider
+    if audio.is_recording:
+        await _stop_recording()
+        await start_recording()
+
     return {"status": "ok", "provider": provider, "model": model}
 
 

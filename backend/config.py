@@ -45,6 +45,11 @@ CLAUDE_MODEL_LABELS = {
     "claude-haiku-4-5-20251001": "Haiku 4.5",
 }
 
+# Transcription settings — defaults (can be changed at runtime via /settings)
+TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "deepgram")  # "deepgram" or "whisper"
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
+
 # Server settings
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 8765

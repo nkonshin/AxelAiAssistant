@@ -11,3 +11,4 @@ python-dotenv>=1.0.0
 janus>=1.0.0
 python-docx>=1.0.0
 python-multipart>=0.0.6
+faster-whisper>=1.0.0

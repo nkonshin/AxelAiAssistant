@@ -318,8 +318,11 @@ export function SettingsPanel({
   const [llmOptions, setLlmOptions] = useState<LLMOptions | null>(null)
   const [selectedProvider, setSelectedProvider] = useState('openai')
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
+  const [transProvider, setTransProvider] = useState('deepgram')
+  const [transModel, setTransModel] = useState('base')
+  const [transModels, setTransModels] = useState<string[]>([])
 
-  // Load LLM settings when panel opens
+  // Load LLM + transcription settings when panel opens
   useEffect(() => {
     if (!isOpen) return
     fetch(`${BACKEND_URL}/settings/llm`)
@@ -328,6 +331,14 @@ export function SettingsPanel({
         setLlmOptions(data)
         setSelectedProvider(data.provider)
         setSelectedModel(data.model)
+      })
+      .catch(() => {})
+    fetch(`${BACKEND_URL}/settings/transcription`)
+      .then((r) => r.json())
+      .then((data) => {
+        setTransProvider(data.provider)
+        setTransModel(data.model)
+        setTransModels(data.available_models || [])
       })
       .catch(() => {})
   }, [isOpen])
@@ -354,6 +365,29 @@ export function SettingsPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: selectedProvider, model }),
+      })
+    } catch {}
+  }
+
+  const handleTransProviderChange = async (provider: string) => {
+    setTransProvider(provider)
+    const model = provider === 'whisper' ? transModel : 'base'
+    try {
+      await fetch(`${BACKEND_URL}/settings/transcription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model }),
+      })
+    } catch {}
+  }
+
+  const handleTransModelChange = async (model: string) => {
+    setTransModel(model)
+    try {
+      await fetch(`${BACKEND_URL}/settings/transcription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: transProvider, model }),
       })
     } catch {}
   }
@@ -441,6 +475,54 @@ export function SettingsPanel({
                 ))}
               </div>
             </div>
+
+            {/* Divider */}
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px -16px', width: 'calc(100% + 32px)' }} />
+
+            {/* Transcription Provider */}
+            <div>
+              <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2.5">Транскрибация</div>
+              <div className="flex gap-2">
+                <button
+                  className={`setting-chip ${transProvider === 'deepgram' ? 'active' : ''}`}
+                  onClick={() => handleTransProviderChange('deepgram')}
+                >
+                  Deepgram
+                </button>
+                <button
+                  className={`setting-chip ${transProvider === 'whisper' ? 'active' : ''}`}
+                  onClick={() => handleTransProviderChange('whisper')}
+                >
+                  Whisper (local)
+                </button>
+              </div>
+              {transProvider === 'deepgram' && (
+                <div className="text-[10px] text-[var(--text-tertiary)] mt-1.5">
+                  Облако, Nova-3, низкая задержка
+                </div>
+              )}
+            </div>
+
+            {/* Whisper model selector */}
+            {transProvider === 'whisper' && transModels.length > 0 && (
+              <div>
+                <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2.5">Whisper модель</div>
+                <div className="flex flex-wrap gap-2">
+                  {transModels.map((m) => (
+                    <button
+                      key={m}
+                      className={`setting-chip ${transModel === m ? 'active' : ''}`}
+                      onClick={() => handleTransModelChange(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-[var(--text-tertiary)] mt-1.5">
+                  {transModel.startsWith('large') ? 'large-v3-turbo: ~1.6 ГБ, скачается при первом запуске' : 'Локально, лучше для mixed RU/EN'}
+                </div>
+              </div>
+            )}
 
             {/* Divider */}
             <div style={{ height: 1, background: 'var(--border)', margin: '4px -16px', width: 'calc(100% + 32px)' }} />

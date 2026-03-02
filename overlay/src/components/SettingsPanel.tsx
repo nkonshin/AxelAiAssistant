@@ -321,6 +321,7 @@ export function SettingsPanel({
   const [transProvider, setTransProvider] = useState('deepgram')
   const [transModel, setTransModel] = useState('base')
   const [transModels, setTransModels] = useState<string[]>([])
+  const [modelStatus, setModelStatus] = useState('n/a')
 
   // Load LLM + transcription settings when panel opens
   useEffect(() => {
@@ -339,9 +340,22 @@ export function SettingsPanel({
         setTransProvider(data.provider)
         setTransModel(data.model)
         setTransModels(data.available_models || [])
+        setModelStatus(data.model_status || 'n/a')
       })
       .catch(() => {})
   }, [isOpen])
+
+  // Poll model status while loading
+  useEffect(() => {
+    if (!isOpen || transProvider !== 'whisper' || modelStatus !== 'loading') return
+    const interval = setInterval(() => {
+      fetch(`${BACKEND_URL}/settings/transcription`)
+        .then((r) => r.json())
+        .then((data) => setModelStatus(data.model_status || 'n/a'))
+        .catch(() => {})
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [isOpen, transProvider, modelStatus])
 
   const handleProviderChange = async (provider: string) => {
     if (!llmOptions) return
@@ -372,23 +386,31 @@ export function SettingsPanel({
   const handleTransProviderChange = async (provider: string) => {
     setTransProvider(provider)
     const model = provider === 'whisper' ? transModel : 'base'
+    if (provider === 'whisper') setModelStatus('loading')
     try {
-      await fetch(`${BACKEND_URL}/settings/transcription`, {
+      const res = await fetch(`${BACKEND_URL}/settings/transcription`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, model }),
       })
+      if (provider === 'whisper') {
+        const status = await fetch(`${BACKEND_URL}/settings/transcription`).then(r => r.json())
+        setModelStatus(status.model_status || 'loading')
+      }
     } catch {}
   }
 
   const handleTransModelChange = async (model: string) => {
     setTransModel(model)
+    setModelStatus('loading')
     try {
       await fetch(`${BACKEND_URL}/settings/transcription`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: transProvider, model }),
       })
+      const status = await fetch(`${BACKEND_URL}/settings/transcription`).then(r => r.json())
+      setModelStatus(status.model_status || 'loading')
     } catch {}
   }
 
@@ -518,8 +540,18 @@ export function SettingsPanel({
                     </button>
                   ))}
                 </div>
-                <div className="text-[10px] text-[var(--text-tertiary)] mt-1.5">
-                  {transModel.startsWith('large') ? 'large-v3-turbo: ~1.6 ГБ, скачается при первом запуске' : 'Локально, лучше для mixed RU/EN'}
+                <div className="text-[10px] mt-1.5" style={{
+                  color: modelStatus === 'ready' ? 'var(--accent-green)'
+                    : modelStatus === 'available' ? 'var(--accent-green)'
+                    : modelStatus === 'loading' ? 'var(--accent-blue)'
+                    : modelStatus.startsWith('error') ? 'var(--accent-red)'
+                    : 'var(--text-tertiary)'
+                }}>
+                  {modelStatus === 'ready' && 'Модель готова'}
+                  {modelStatus === 'available' && 'Модель скачана, готова к запуску'}
+                  {modelStatus === 'loading' && 'Загрузка модели...'}
+                  {modelStatus.startsWith('error') && `Ошибка: ${modelStatus.slice(7)}`}
+                  {modelStatus === 'not_downloaded' && (transModel.startsWith('large') ? '~1.6 ГБ, скачается при первом запуске' : 'Будет загружена автоматически')}
                 </div>
               </div>
             )}

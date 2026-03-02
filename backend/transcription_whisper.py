@@ -4,16 +4,22 @@ Local Whisper transcription using faster-whisper.
 Buffers audio chunks (100ms, int16 PCM 16kHz) and periodically runs
 Whisper transcription in a background thread. Uses simple energy-based
 VAD to detect speech pauses and emit on_utterance_end.
+
+Models are stored in ~/.axel-assistant/models/<model_name>/
+(CTranslate2 format: model.bin + config.json + tokenizer.json + vocabulary.json)
 """
 
 import asyncio
 import logging
+import os
 import numpy as np
+from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+MODELS_DIR = Path.home() / ".axel-assistant" / "models"
 
 # VAD thresholds
 SILENCE_RMS_THRESHOLD = 300  # RMS below this = silence
@@ -24,16 +30,58 @@ PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
 # Global model cache: {model_name: WhisperModel}
 _model_cache: dict = {}
 _model_loading: dict[str, asyncio.Event] = {}
+_model_error: dict[str, str] = {}
+
+
+def is_model_ready(model_name: str) -> bool:
+    """Check if a model is loaded and ready to use."""
+    return model_name in _model_cache
+
+
+def is_model_loading(model_name: str) -> bool:
+    """Check if a model is currently being downloaded/loaded."""
+    return model_name in _model_loading
+
+
+def has_local_model(model_name: str) -> bool:
+    """Check if model files exist locally."""
+    return (MODELS_DIR / model_name / "model.bin").exists()
+
+
+def get_model_status(model_name: str) -> str:
+    """Get model status: ready / loading / error / available / not_downloaded."""
+    if model_name in _model_cache:
+        return "ready"
+    if model_name in _model_loading:
+        return "loading"
+    if model_name in _model_error:
+        return f"error: {_model_error[model_name]}"
+    if has_local_model(model_name):
+        return "available"  # Downloaded but not loaded into memory yet
+    return "not_downloaded"
+
+
+def _resolve_model_path(model_name: str) -> str:
+    """Return local dir path if model exists locally, otherwise model name for HF download."""
+    local_dir = MODELS_DIR / model_name
+    model_bin = local_dir / "model.bin"
+    if model_bin.exists():
+        logger.info(f"Using local model: {local_dir}")
+        return str(local_dir)
+    # Fallback to huggingface_hub download (model name)
+    return model_name
 
 
 def _do_load_model(model_name: str):
     """Load WhisperModel in a thread (blocking)."""
     from faster_whisper import WhisperModel
-    return WhisperModel(model_name, device="cpu", compute_type="int8")
+    path = _resolve_model_path(model_name)
+    return WhisperModel(path, device="cpu", compute_type="int8")
 
 
-async def preload_model(model_name: str) -> None:
-    """Pre-load a Whisper model into global cache. Safe to call concurrently."""
+async def preload_model(model_name: str, on_status=None) -> None:
+    """Pre-load a Whisper model into global cache. Safe to call concurrently.
+    on_status: optional async callback(message) for progress updates."""
     if model_name in _model_cache:
         logger.info(f"Whisper model '{model_name}' already cached")
         return
@@ -46,11 +94,20 @@ async def preload_model(model_name: str) -> None:
 
     event = asyncio.Event()
     _model_loading[model_name] = event
+    _model_error.pop(model_name, None)
     try:
-        logger.info(f"Loading Whisper model '{model_name}'...")
+        logger.info(f"Loading Whisper model '{model_name}' (download + init)...")
+        if on_status:
+            await on_status(f"Загрузка модели Whisper ({model_name})...")
         model = await asyncio.to_thread(_do_load_model, model_name)
         _model_cache[model_name] = model
         logger.info(f"Whisper model '{model_name}' loaded and cached")
+        if on_status:
+            await on_status(None)  # Clear status
+    except Exception as e:
+        _model_error[model_name] = str(e)[:200]
+        logger.error(f"Failed to load Whisper model '{model_name}': {e}")
+        raise
     finally:
         event.set()
         _model_loading.pop(model_name, None)

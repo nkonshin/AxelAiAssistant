@@ -124,6 +124,9 @@ export function useSSE() {
         if (data.type === 'loading') {
           updates.statusMessage = data.message
         }
+        if (data.type === 'model_ready') {
+          updates.statusMessage = null
+        }
         if (data.type === 'error') {
           updates.error = data.message
           updates.statusMessage = null

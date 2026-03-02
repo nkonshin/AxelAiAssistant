@@ -25,7 +25,7 @@ from config import (
 )
 from audio_capture import AudioCapture
 from transcription import DeepgramTranscriber
-from transcription_whisper import WhisperTranscriber, preload_model
+from transcription_whisper import WhisperTranscriber, preload_model, is_model_ready, is_model_loading, get_model_status
 from question_detector import QuestionDetector
 from llm_client import LLMClient
 from screenshot import ScreenshotCapture
@@ -234,10 +234,12 @@ async def start_recording():
         if provider == "deepgram" and not DEEPGRAM_API_KEY:
             raise ValueError("DEEPGRAM_API_KEY not set in .env")
 
-        # Pre-load Whisper model before starting audio (can take minutes for large models)
+        # Check Whisper model is ready (must be pre-downloaded via settings)
         if provider == "whisper":
-            await emit_event("status", {"type": "loading", "message": f"Загрузка модели Whisper ({model})..."})
-            await preload_model(model)
+            if is_model_loading(model):
+                raise ValueError(f"Модель {model} ещё загружается, подождите...")
+            if not is_model_ready(model):
+                raise ValueError(f"Модель {model} не загружена. Выберите модель в настройках — загрузка начнётся автоматически.")
 
         await audio.start()
 
@@ -390,12 +392,30 @@ async def set_llm_settings(request: Request):
 @app.get("/settings/transcription")
 async def get_transcription_settings():
     """Get current transcription provider, model, and available options."""
+    model_status = get_model_status(_current_whisper_model) if _current_transcription_provider == "whisper" else "n/a"
     return {
         "provider": _current_transcription_provider,
         "model": _current_whisper_model,
         "available_models": WHISPER_MODELS,
         "recording": audio.is_recording,
+        "model_status": model_status,
     }
+
+
+async def _bg_preload_status(message: str | None):
+    """SSE callback for background model loading progress."""
+    if message:
+        await emit_event("status", {"type": "loading", "message": message})
+    else:
+        await emit_event("status", {"type": "model_ready", "message": "Модель загружена"})
+
+
+async def _bg_preload(model_name: str):
+    """Background task: download and load Whisper model."""
+    try:
+        await preload_model(model_name, on_status=_bg_preload_status)
+    except Exception as e:
+        await emit_event("status", {"type": "error", "message": f"Ошибка загрузки модели: {e}"})
 
 
 @app.post("/settings/transcription")
@@ -418,11 +438,18 @@ async def set_transcription_settings(request: Request):
     _current_transcription_provider = provider
     if provider == "whisper":
         _current_whisper_model = model
+        # Start background download/load (non-blocking)
+        if not is_model_ready(model) and not is_model_loading(model):
+            asyncio.create_task(_bg_preload(model))
 
-    # If recording, restart with new provider
+    # If recording, restart with new provider (only if model ready)
     if audio.is_recording:
-        await _stop_recording()
-        await start_recording()
+        if provider == "whisper" and not is_model_ready(model):
+            await _stop_recording()
+            await emit_event("status", {"type": "loading", "message": f"Запись остановлена. Загрузка модели {model}..."})
+        else:
+            await _stop_recording()
+            await start_recording()
 
     return {"status": "ok", "provider": provider, "model": model}
 

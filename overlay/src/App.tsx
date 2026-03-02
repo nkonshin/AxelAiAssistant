@@ -27,7 +27,8 @@ function App() {
   // caching bug where -webkit-app-region: drag persists after class removal.
   const [settingsMounted, setSettingsMounted] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [opacity, setOpacity] = useState(0.85)
+  const [opacity, setOpacity] = useState(0.80)
+  const [inputBarVisible, setInputBarVisible] = useState(false)
   const [clickThrough, setClickThrough] = useState(false)
   const [autoAnswer, setAutoAnswer] = useState(true)
 
@@ -96,6 +97,7 @@ function App() {
   // Hotkey handlers
   useHotkeys({
     'copy-last-answer': handleCopy,
+    'toggle-input-bar': () => setInputBarVisible((v) => !v),
   })
 
   return (
@@ -126,10 +128,12 @@ function App() {
         </div>
       )}
 
-      <InputBar
-        onSubmit={handleManualQuestion}
-        disabled={!isConnected}
-      />
+      {inputBarVisible && (
+        <InputBar
+          onSubmit={handleManualQuestion}
+          disabled={!isConnected}
+        />
+      )}
 
       <Transcript
         transcripts={transcripts}

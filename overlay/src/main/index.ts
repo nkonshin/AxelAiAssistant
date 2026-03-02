@@ -10,7 +10,7 @@
  * Window is interactive by default. Click-through is opt-in via settings.
  */
 
-import { app, BrowserWindow, globalShortcut, ipcMain, clipboard } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } from 'electron'
 import { join } from 'path'
 import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs'
 import { homedir } from 'os'
@@ -30,15 +30,20 @@ function log(msg: string): void {
 
 let mainWindow: BrowserWindow | null = null
 let isRecording = false
-let currentOpacity = 0.85
+let currentOpacity = 0.80
 let isClickThrough = false
 
 function createWindow(): void {
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize
+  const winW = Math.round(screenW * 0.6)
+  const winH = Math.round(screenH * 0.5)
+  const winX = Math.round((screenW - winW) / 2)
+
   mainWindow = new BrowserWindow({
-    width: 500,
-    height: 700,
-    x: 50,
-    y: 100,
+    width: winW,
+    height: winH,
+    x: winX,
+    y: 0,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -127,6 +132,11 @@ function registerHotkeys(): void {
   // Copy last answer
   globalShortcut.register('CommandOrControl+Shift+C', () => {
     mainWindow?.webContents.send('hotkey-action', 'copy-last-answer')
+  })
+
+  // Toggle input bar visibility
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    mainWindow?.webContents.send('hotkey-action', 'toggle-input-bar')
   })
 
   // Increase opacity

@@ -165,6 +165,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not list audio devices: {e}")
     logger.info(f"Transcription provider: {_current_transcription_provider}")
+
+    # Auto-preload Whisper model at startup so the user doesn't have to
+    # manually select it in settings before recording
+    if _current_transcription_provider == "whisper" and _current_whisper_model:
+        if not is_model_ready(_current_whisper_model) and not is_model_loading(_current_whisper_model):
+            logger.info(f"Auto-preloading Whisper model: {_current_whisper_model}")
+            asyncio.create_task(_bg_preload(_current_whisper_model))
+
     yield
     # Shutdown
     if audio.is_recording:

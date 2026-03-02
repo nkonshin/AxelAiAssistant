@@ -180,6 +180,12 @@ app.whenReady().then(async () => {
 
 // IPC handlers
 ipcMain.on('set-ignore-mouse', (_event, ignore: boolean) => {
+  // Only toggle mouse events when click-through mode is active.
+  // Without this guard, Interactable components in the renderer
+  // (e.g. Transcript) would accidentally put the window into
+  // click-through mode on mouseleave even when the user hasn't
+  // enabled click-through, making TopBar buttons unresponsive.
+  if (!isClickThrough) return
   mainWindow?.setIgnoreMouseEvents(ignore, { forward: true })
 })
 

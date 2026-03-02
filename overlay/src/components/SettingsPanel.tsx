@@ -30,7 +30,6 @@ interface Props {
   onClickThroughChange: (value: boolean) => void
   autoAnswer: boolean
   onAutoAnswerChange: (value: boolean) => void
-  isRecording: boolean
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -312,7 +311,6 @@ export function SettingsPanel({
   onClickThroughChange,
   autoAnswer,
   onAutoAnswerChange,
-  isRecording,
 }: Props) {
   const [hotkeysExpanded, setHotkeysExpanded] = useState(false)
   const [llmOptions, setLlmOptions] = useState<LLMOptions | null>(null)
@@ -416,13 +414,6 @@ export function SettingsPanel({
 
   const handleQuit = () => {
     window.electronAPI?.quitApp()
-  }
-
-  const handleToggleRecording = async () => {
-    const endpoint = isRecording ? '/stop' : '/start'
-    try {
-      await fetch(`${BACKEND_URL}${endpoint}`, { method: 'POST' })
-    } catch {}
   }
 
   const currentModels = llmOptions
@@ -558,15 +549,6 @@ export function SettingsPanel({
 
             {/* Divider */}
             <div style={{ height: 1, background: 'var(--border)', margin: '4px -16px', width: 'calc(100% + 32px)' }} />
-
-            {/* Recording toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-medium text-[var(--text-primary)]">Запись</div>
-                <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">Микрофон + системное аудио</div>
-              </div>
-              <Toggle value={isRecording} onChange={handleToggleRecording} />
-            </div>
 
             {/* Transparency */}
             <div>

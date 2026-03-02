@@ -23,9 +23,9 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
   }
 
   return (
-    <div className="drag-region flex items-center gap-3 px-4 py-3">
+    <div className="flex items-center gap-3 px-4 py-3">
       {/* Logo + status */}
-      <div className="flex items-center gap-2.5 no-drag">
+      <div className="flex items-center gap-2.5">
         {/* Waveform icon */}
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
           <rect x="2" y="9" width="3" height="6" rx="1.5" fill={isConnected ? '#0a84ff' : '#48484a'} opacity={isConnected ? 1 : 0.5} />
@@ -33,16 +33,6 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
           <rect x="12" y="7" width="3" height="10" rx="1.5" fill={isConnected ? '#0a84ff' : '#48484a'} opacity={isConnected ? 0.9 : 0.5} />
           <rect x="17" y="3" width="3" height="18" rx="1.5" fill={isConnected ? '#0a84ff' : '#48484a'} opacity={isConnected ? 0.7 : 0.5} />
         </svg>
-
-        {/* Recording toggle button */}
-        <button
-          className={`rec-toggle no-drag ${isRecording ? 'active' : ''}`}
-          onClick={handleToggleRecording}
-          title={isRecording ? 'Остановить запись (⌘⇧M)' : 'Начать запись (⌘⇧M)'}
-        >
-          <span className="rec-toggle-dot" />
-          <span className="rec-toggle-label">{isRecording ? 'REC' : 'OFF'}</span>
-        </button>
 
         {/* Recording dots (animated waveform) */}
         <div className="flex items-center gap-[3px]">
@@ -56,21 +46,37 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
         </div>
       </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      {/* Drag handle — only this empty space is draggable */}
+      <div className="drag-region flex-1" style={{ minHeight: 28 }} />
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-2 no-drag">
-        <button className="action-btn" onClick={handleForceAnswer}>
-          Спросить
-          <span className="shortcut">&#8984;&#8679;A</span>
-        </button>
+      {/* Action buttons — no-drag ensures they're not swallowed by the drag region */}
+      <button
+        className={`no-drag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors cursor-pointer ${
+          isRecording
+            ? 'bg-[rgba(255,69,58,0.15)] border border-[rgba(255,69,58,0.4)] text-[#ff453a] hover:bg-[rgba(255,69,58,0.25)]'
+            : 'bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.1)] hover:text-white'
+        }`}
+        onClick={handleToggleRecording}
+      >
+        {isRecording ? 'Стоп' : 'Старт'}
+        <span className="text-[11px] opacity-50 font-mono">&#8984;&#8679;M</span>
+      </button>
 
-        <button className="action-btn" onClick={handleScreenshot}>
-          Скриншот
-          <span className="shortcut">&#8984;&#8679;S</span>
-        </button>
-      </div>
+      <button
+        className="no-drag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.1)] hover:text-white transition-colors cursor-pointer"
+        onClick={handleForceAnswer}
+      >
+        Спросить
+        <span className="text-[11px] opacity-50 font-mono">&#8984;&#8679;A</span>
+      </button>
+
+      <button
+        className="no-drag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.1)] hover:text-white transition-colors cursor-pointer"
+        onClick={handleScreenshot}
+      >
+        Скриншот
+        <span className="text-[11px] opacity-50 font-mono">&#8984;&#8679;S</span>
+      </button>
 
       {/* Menu button */}
       <button

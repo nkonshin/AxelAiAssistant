@@ -25,10 +25,28 @@ function App() {
   } = useSSE()
 
   // UI state
+  // Two-phase mount: settingsMounted controls DOM presence,
+  // settingsOpen controls the CSS open/close animation.
+  // This ensures the drag-region inside SettingsPanel is completely
+  // removed from the DOM when closed, avoiding Chromium's compositor
+  // caching bug where -webkit-app-region: drag persists after class removal.
+  const [settingsMounted, setSettingsMounted] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [opacity, setOpacity] = useState(0.85)
   const [clickThrough, setClickThrough] = useState(false)
   const [autoAnswer, setAutoAnswer] = useState(true)
+
+  const handleOpenSettings = useCallback(() => {
+    setSettingsMounted(true)
+    // Next frame: trigger CSS transition after DOM is ready
+    requestAnimationFrame(() => setSettingsOpen(true))
+  }, [])
+
+  const handleCloseSettings = useCallback(() => {
+    setSettingsOpen(false)
+    // Unmount after CSS transition completes (200ms + buffer)
+    setTimeout(() => setSettingsMounted(false), 250)
+  }, [])
 
   // Copy current answer to clipboard
   const handleCopy = useCallback(() => {
@@ -92,7 +110,7 @@ function App() {
       <TopBar
         isRecording={isRecording}
         isConnected={isConnected}
-        onMenuClick={() => setSettingsOpen(true)}
+        onMenuClick={handleOpenSettings}
       />
 
       {/* Status/loading toast */}
@@ -139,17 +157,18 @@ function App() {
         onCopy={handleCopy}
       />
 
-      <SettingsPanel
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        opacity={opacity}
-        onOpacityChange={handleOpacityChange}
-        clickThrough={clickThrough}
-        onClickThroughChange={handleClickThroughChange}
-        autoAnswer={autoAnswer}
-        onAutoAnswerChange={setAutoAnswer}
-        isRecording={isRecording}
-      />
+      {settingsMounted && (
+        <SettingsPanel
+          isOpen={settingsOpen}
+          onClose={handleCloseSettings}
+          opacity={opacity}
+          onOpacityChange={handleOpacityChange}
+          clickThrough={clickThrough}
+          onClickThroughChange={handleClickThroughChange}
+          autoAnswer={autoAnswer}
+          onAutoAnswerChange={setAutoAnswer}
+        />
+      )}
     </div>
   )
 }

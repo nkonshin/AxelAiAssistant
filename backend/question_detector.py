@@ -1,13 +1,14 @@
 """
 Auto-trigger for AI answer generation based on speech pauses.
 
-Accumulates all speech (both sources) and triggers LLM generation
-after a configurable silence period. Sends full context (interviewer +
-user speech) so the LLM understands the conversation.
+System audio (interviewer) triggers auto-generation after silence.
+Mic audio (candidate) is buffered separately — it does NOT auto-trigger,
+but can be manually sent to LLM via F5 hotkey (POST /trigger-mic).
 
 Trigger mechanisms:
-1. Pause-based: 2s of silence after speech → auto-generate
-2. Manual: force_trigger via hotkey (Cmd+Shift+A) → immediate generation
+1. Pause-based: 3s of silence after interviewer speech → auto-generate
+2. Mic trigger: F5 hotkey → send candidate's mic buffer to LLM
+3. Force trigger: Cmd+Shift+A → send everything (both buffers)
 """
 
 import asyncio
@@ -26,24 +27,37 @@ PAUSE_TRIGGER_DELAY = 3.0
 class QuestionDetector:
     def __init__(self, on_question_detected: Callable):
         self.on_question_detected = on_question_detected
-        self.buffer: list[dict] = []
+        self.buffer: list[dict] = []      # System (interviewer) speech only
+        self.mic_buffer: list[dict] = []   # Mic (candidate) speech — manual trigger only
         self.last_source: Optional[str] = None
         self._debounce_task: Optional[asyncio.Task] = None
         self.mic_only_mode = False  # Set to True when BlackHole is unavailable
 
     async def add_transcript(self, source: str, speaker: int, text: str):
-        """Add a recognized phrase to the buffer."""
-        self.buffer.append({
+        """Add a recognized phrase to the appropriate buffer."""
+        entry = {
             "source": source,
             "speaker": speaker,
             "text": text,
             "timestamp": time.time(),
-        })
+        }
         self.last_source = source
-        logger.debug(f"Buffer += [{source}] {text}")
+
+        if self.mic_only_mode:
+            # No BlackHole — all audio goes to main buffer (old behavior)
+            self.buffer.append(entry)
+        elif source == "mic":
+            # Mic speech → separate buffer, does NOT auto-trigger
+            self.mic_buffer.append(entry)
+            logger.debug(f"Mic buffer += {text}")
+        else:
+            # System (interviewer) speech → main buffer, auto-triggers
+            self.buffer.append(entry)
+            logger.debug(f"Buffer += [{source}] {text}")
 
         # Any speech from any source resets the debounce timer.
-        # This prevents triggering mid-question when someone is still talking.
+        # Mic speech delays auto-trigger (good: prevents firing while candidate speaks)
+        # but doesn't add to the system buffer (so no echo-answers).
         self._reset_debounce()
 
     async def on_utterance_end(self, source: str):
@@ -66,7 +80,7 @@ class QuestionDetector:
             pass
 
     async def _trigger(self):
-        """Send accumulated speech to LLM for answer generation."""
+        """Send accumulated system speech to LLM for answer generation."""
         if not self.buffer:
             return
 
@@ -75,7 +89,6 @@ class QuestionDetector:
         for p in self.buffer:
             label = "Интервьюер" if p["source"] == "system" else "Кандидат"
             if self.mic_only_mode:
-                # In mic-only mode, no source distinction
                 parts.append(p["text"])
             else:
                 parts.append(f"[{label}]: {p['text']}")
@@ -87,18 +100,37 @@ class QuestionDetector:
 
         logger.info(f"Auto-trigger: {full_text[:120]}...")
         self.buffer.clear()
+        self.mic_buffer.clear()  # Clear mic context after answer generation
         await self.on_question_detected(full_text)
 
-    async def force_trigger(self):
-        """Manual trigger via hotkey — uses all buffered text."""
+    async def trigger_with_mic(self):
+        """Manual mic trigger via F5 — send candidate's mic buffer to LLM."""
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
 
-        if not self.buffer:
+        if not self.mic_buffer:
+            logger.info("Mic trigger: empty mic buffer, nothing to send")
             return
 
-        full_text = " ".join(p["text"] for p in self.buffer)
+        full_text = " ".join(p["text"] for p in self.mic_buffer)
+        if full_text.strip():
+            logger.info(f"Mic trigger (F5): {full_text[:120]}...")
+            self.mic_buffer.clear()
+            self.buffer.clear()  # Also clear system buffer to avoid stale auto-trigger
+            await self.on_question_detected(full_text)
+
+    async def force_trigger(self):
+        """Manual trigger via Cmd+Shift+A — uses ALL buffered text (both sources)."""
+        if self._debounce_task and not self._debounce_task.done():
+            self._debounce_task.cancel()
+
+        all_entries = self.buffer + self.mic_buffer
+        if not all_entries:
+            return
+
+        full_text = " ".join(p["text"] for p in all_entries)
         if full_text.strip():
             logger.info(f"Force trigger: {full_text[:120]}...")
             self.buffer.clear()
+            self.mic_buffer.clear()
             await self.on_question_detected(full_text)

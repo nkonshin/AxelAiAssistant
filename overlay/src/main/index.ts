@@ -109,9 +109,14 @@ function registerHotkeys(): void {
     log(`[Hotkey] Click-through: ${isClickThrough}`)
   })
 
-  // Force answer
+  // Force answer (all buffers)
   globalShortcut.register('CommandOrControl+Shift+A', () => {
     fetch('http://127.0.0.1:8765/force-answer', { method: 'POST' }).catch(() => {})
+  })
+
+  // Mic trigger: send candidate's speech to LLM (F5)
+  globalShortcut.register('F5', () => {
+    fetch('http://127.0.0.1:8765/trigger-mic', { method: 'POST' }).catch(() => {})
   })
 
   // Screenshot

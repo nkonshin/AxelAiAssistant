@@ -304,9 +304,11 @@ async def take_screenshot():
         return {"status": "error", "message": str(e)}
 
     question = "Проанализируй скриншот и помоги решить задачу."
-    if question_detector.buffer:
-        question = " ".join(p["text"] for p in question_detector.buffer)
+    all_entries = question_detector.buffer + question_detector.mic_buffer
+    if all_entries:
+        question = " ".join(p["text"] for p in all_entries)
         question_detector.buffer.clear()
+        question_detector.mic_buffer.clear()
 
     if _current_generation and not _current_generation.done():
         _current_generation.cancel()
@@ -325,6 +327,13 @@ async def take_screenshot():
 async def force_answer():
     """Force answer generation from current buffer."""
     await question_detector.force_trigger()
+    return {"status": "triggered"}
+
+
+@app.post("/trigger-mic")
+async def trigger_mic():
+    """Send candidate's mic buffer to LLM (F5 hotkey)."""
+    await question_detector.trigger_with_mic()
     return {"status": "triggered"}
 
 

@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from project root
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
+# Load .env: first try ~/.axel-assistant/.env (packaged), then project root (dev)
+_home_env = Path.home() / '.axel-assistant' / '.env'
+_project_env = Path(__file__).resolve().parent.parent / '.env'
+if _home_env.exists():
+    load_dotenv(dotenv_path=str(_home_env))
+else:
+    load_dotenv(dotenv_path=str(_project_env))
 
 # API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

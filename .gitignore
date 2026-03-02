@@ -36,3 +36,12 @@ CLAUDE.md
 # Personal data (profile, job description — use .example templates)
 backend/profile.md
 backend/job_description.md
+
+# Build artifacts
+overlay/build/
+
+# Local logs
+logs.txt
+
+# Claude Code
+.claude/

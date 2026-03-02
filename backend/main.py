@@ -78,8 +78,20 @@ async def _generate_answer(question: str, answer_id: str, screenshot_b64: str | 
     except asyncio.CancelledError:
         logger.info(f"Generation cancelled [{answer_id}]")
     except Exception as e:
-        logger.error(f"LLM error: {e}")
-        await emit_event("status", {"type": "error", "message": f"LLM error: {e}"})
+        err_str = str(e)
+        logger.error(f"LLM error ({llm.provider}/{llm.model}): {e}")
+        # Provide user-friendly error messages
+        if "AuthenticationError" in type(e).__name__ or "401" in err_str:
+            msg = f"API ключ недействителен для {llm.provider}. Проверьте .env файл."
+        elif "RateLimitError" in type(e).__name__ or "429" in err_str:
+            msg = f"Лимит запросов {llm.provider} превышен. Подождите или смените модель."
+        elif "insufficient_quota" in err_str:
+            msg = f"Недостаточно средств на аккаунте {llm.provider}."
+        elif "Connection" in type(e).__name__ or "connect" in err_str.lower():
+            msg = f"Нет подключения к {llm.provider}. Проверьте интернет."
+        else:
+            msg = f"LLM ошибка ({llm.provider}): {err_str[:150]}"
+        await emit_event("status", {"type": "error", "message": msg})
 
     await emit_event("ai_answer_end", {"full_answer": full_answer, "id": answer_id})
 
@@ -109,16 +121,20 @@ transcriber_system = DeepgramTranscriber(DEEPGRAM_API_KEY, on_transcript, on_utt
 transcriber_mic = DeepgramTranscriber(DEEPGRAM_API_KEY, on_transcript, on_utterance_end)
 
 
-async def audio_to_deepgram(queue, transcriber: DeepgramTranscriber):
+async def audio_to_deepgram(queue, transcriber: DeepgramTranscriber, label: str = "?"):
     """Pump audio chunks from capture queue to Deepgram WebSocket."""
+    chunk_count = 0
     while True:
         try:
             audio_bytes = await queue.async_q.get()
+            chunk_count += 1
+            if chunk_count <= 3 or chunk_count % 100 == 0:
+                logger.info(f"Audio pump [{label}]: chunk #{chunk_count}, {len(audio_bytes)} bytes")
             await transcriber.send_audio(audio_bytes)
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Audio pump error: {e}")
+            logger.error(f"Audio pump error [{label}]: {e}")
             await asyncio.sleep(0.1)
 
 
@@ -139,8 +155,9 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if audio.is_recording:
         audio.stop()
-        await transcriber_system.close()
         await transcriber_mic.close()
+        if audio.has_system_audio:
+            await transcriber_system.close()
     logger.info("Backend shut down")
 
 
@@ -176,15 +193,24 @@ async def start_recording():
     """Start audio capture and transcription."""
     try:
         await audio.start()
-        await transcriber_system.connect(label="system")
+
+        # Always connect mic transcriber
         await transcriber_mic.connect(label="mic")
+        asyncio.create_task(audio_to_deepgram(audio.mic_queue, transcriber_mic, "mic"))
 
-        asyncio.create_task(audio_to_deepgram(audio.system_queue, transcriber_system))
-        asyncio.create_task(audio_to_deepgram(audio.mic_queue, transcriber_mic))
+        # Connect system audio transcriber only if BlackHole is available
+        if audio.has_system_audio:
+            await transcriber_system.connect(label="system")
+            asyncio.create_task(audio_to_deepgram(audio.system_queue, transcriber_system, "system"))
+            question_detector.mic_only_mode = False
+            mode = "mic + system"
+        else:
+            question_detector.mic_only_mode = True
+            mode = "mic only (BlackHole not found)"
 
-        await emit_event("status", {"type": "recording", "message": "Recording started"})
-        logger.info("Recording started")
-        return {"status": "started"}
+        await emit_event("status", {"type": "recording", "message": f"Recording: {mode}"})
+        logger.info(f"Recording started: {mode}")
+        return {"status": "started", "mode": mode}
     except Exception as e:
         await emit_event("status", {"type": "error", "message": str(e)})
         logger.error(f"Start error: {e}")
@@ -195,8 +221,9 @@ async def start_recording():
 async def stop_recording():
     """Stop audio capture and transcription."""
     audio.stop()
-    await transcriber_system.close()
     await transcriber_mic.close()
+    if audio.has_system_audio:
+        await transcriber_system.close()
     await emit_event("status", {"type": "stopped", "message": "Recording stopped"})
     logger.info("Recording stopped")
     return {"status": "stopped"}
@@ -252,6 +279,7 @@ async def get_status():
     """Get current application state."""
     return {
         "recording": audio.is_recording,
+        "has_system_audio": audio.has_system_audio,
         "has_openai_key": bool(OPENAI_API_KEY),
         "has_deepgram_key": bool(DEEPGRAM_API_KEY),
         "exchanges_count": len(context.exchanges),
@@ -297,6 +325,11 @@ async def set_llm_settings(request: Request):
     available = OPENAI_MODELS if provider == "openai" else CLAUDE_MODELS
     if model not in available:
         return {"status": "error", "message": f"Unknown model: {model}"}
+
+    # Warn if switching to OpenAI without a key
+    if provider == "openai" and not OPENAI_API_KEY:
+        await emit_event("status", {"type": "error", "message": "OPENAI_API_KEY not set in .env"})
+        return {"status": "error", "message": "OPENAI_API_KEY not configured"}
 
     llm.set_provider(provider, model)
     return {"status": "ok", "provider": provider, "model": model}

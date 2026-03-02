@@ -109,11 +109,17 @@ export function useSSE() {
 
     es.addEventListener('status', (e) => {
       const data = JSON.parse(e.data)
-      setState((s) => ({
-        ...s,
-        isRecording: data.type === 'recording',
-        error: data.type === 'error' ? data.message : s.error,
-      }))
+      setState((s) => {
+        const updates: Partial<SSEState> = {}
+        // Only update isRecording on recording-specific events
+        if (data.type === 'recording') updates.isRecording = true
+        if (data.type === 'stopped') updates.isRecording = false
+        // Track errors
+        if (data.type === 'error') {
+          updates.error = data.message
+        }
+        return { ...s, ...updates }
+      })
     })
 
     es.onerror = () => {
@@ -159,6 +165,10 @@ export function useSSE() {
     }))
   }, [])
 
+  const clearError = useCallback(() => {
+    setState((s) => ({ ...s, error: null }))
+  }, [])
+
   const currentEntry = state.answers[state.viewIndex] || null
 
   return {
@@ -169,5 +179,6 @@ export function useSSE() {
     goNext,
     goPrev,
     goToLatest,
+    clearError,
   }
 }

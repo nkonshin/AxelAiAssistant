@@ -1,12 +1,12 @@
 """
-Detects when the interviewer asks a question from the transcript stream.
+Auto-trigger for AI answer generation based on speech pauses.
 
-v2: Accumulates all speech from system audio until a real pause (2s),
-then sends the entire block to LLM. This handles compound questions
-and prevents false triggers on mid-sentence pauses.
+Accumulates all speech (both sources) and triggers LLM generation
+after a configurable silence period. Sends full context (interviewer +
+user speech) so the LLM understands the conversation.
 
 Trigger mechanisms:
-1. Pause-based: 2s of silence after system audio speech → auto-generate
+1. Pause-based: 2s of silence after speech → auto-generate
 2. Manual: force_trigger via hotkey (Cmd+Shift+A) → immediate generation
 """
 
@@ -27,6 +27,7 @@ class QuestionDetector:
         self.buffer: list[dict] = []
         self.last_source: Optional[str] = None
         self._debounce_task: Optional[asyncio.Task] = None
+        self.mic_only_mode = False  # Set to True when BlackHole is unavailable
 
     async def add_transcript(self, source: str, speaker: int, text: str):
         """Add a recognized phrase to the buffer."""
@@ -37,20 +38,18 @@ class QuestionDetector:
             "timestamp": time.time(),
         })
         self.last_source = source
+        logger.debug(f"Buffer += [{source}] {text}")
 
-        # If system audio is still speaking, reset the debounce timer
-        if source == "system":
+        # Any speech resets the debounce timer
+        trigger_source = source == "system" or (self.mic_only_mode and source == "mic")
+        if trigger_source:
             self._reset_debounce()
 
     async def on_utterance_end(self, source: str):
         """Called on speech pause (utterance_end from Deepgram)."""
-        if source == "system" and self._has_system_speech():
-            # Start debounce timer — will trigger after PAUSE_TRIGGER_DELAY
+        trigger_source = source == "system" or (self.mic_only_mode and source == "mic")
+        if trigger_source and self.buffer:
             self._reset_debounce()
-
-    def _has_system_speech(self) -> bool:
-        """Check if buffer contains any system (interviewer) speech."""
-        return any(p["source"] == "system" for p in self.buffer)
 
     def _reset_debounce(self):
         """Reset the debounce timer. Trigger fires after PAUSE_TRIGGER_DELAY of silence."""
@@ -62,37 +61,44 @@ class QuestionDetector:
         """Wait for pause, then trigger if still no new speech."""
         try:
             await asyncio.sleep(PAUSE_TRIGGER_DELAY)
-            # Timer expired without being reset → real pause → trigger
             await self._trigger()
         except asyncio.CancelledError:
-            # New speech arrived, timer was reset — do nothing
             pass
 
     async def _trigger(self):
-        """Send accumulated system speech to LLM."""
+        """Send accumulated speech to LLM for answer generation."""
         if not self.buffer:
             return
 
-        full_text = " ".join(
-            p["text"] for p in self.buffer if p["source"] == "system"
-        )
+        # Build text with source labels for LLM context
+        parts = []
+        for p in self.buffer:
+            label = "Интервьюер" if p["source"] == "system" else "Кандидат"
+            if self.mic_only_mode:
+                # In mic-only mode, no source distinction
+                parts.append(p["text"])
+            else:
+                parts.append(f"[{label}]: {p['text']}")
+
+        full_text = " ".join(parts) if self.mic_only_mode else "\n".join(parts)
+
         if not full_text.strip():
             return
 
-        logger.info(f"Question detected: {full_text[:100]}...")
+        logger.info(f"Auto-trigger: {full_text[:120]}...")
         self.buffer.clear()
         await self.on_question_detected(full_text)
 
     async def force_trigger(self):
-        """Manual trigger via hotkey — uses all buffered text (both sources)."""
-        # Cancel any pending debounce
+        """Manual trigger via hotkey — uses all buffered text."""
         if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
 
         if not self.buffer:
             return
+
         full_text = " ".join(p["text"] for p in self.buffer)
         if full_text.strip():
-            logger.info(f"Force trigger: {full_text[:100]}...")
+            logger.info(f"Force trigger: {full_text[:120]}...")
             self.buffer.clear()
             await self.on_question_detected(full_text)

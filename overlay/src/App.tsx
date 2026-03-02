@@ -3,6 +3,7 @@ import { useSSE } from './hooks/useSSE'
 import { useHotkeys } from './hooks/useHotkeys'
 import { TopBar } from './components/TopBar'
 import { InputBar } from './components/InputBar'
+import { Transcript } from './components/Transcript'
 import { AnswerView } from './components/AnswerView'
 import { AnswerNav } from './components/AnswerNav'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -15,8 +16,11 @@ function App() {
     currentPage,
     isRecording,
     isConnected,
+    transcripts,
+    error,
     goNext,
     goPrev,
+    clearError,
   } = useSSE()
 
   // UI state
@@ -84,9 +88,27 @@ function App() {
         onMenuClick={() => setSettingsOpen(true)}
       />
 
+      {/* Error toast */}
+      {error && (
+        <div className="error-toast">
+          <span className="error-toast-text">{error}</span>
+          <button className="error-toast-close" onClick={clearError}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <InputBar
         onSubmit={handleManualQuestion}
         disabled={!isConnected}
+      />
+
+      <Transcript
+        transcripts={transcripts}
+        isRecording={isRecording}
       />
 
       <AnswerView

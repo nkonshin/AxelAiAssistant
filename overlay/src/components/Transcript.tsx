@@ -1,8 +1,13 @@
 /**
- * Collapsible transcript panel showing recent speech recognition results.
+ * Live transcript panel in dialog format.
+ * Shows real-time speech recognition results as a chat:
+ * - INT (system audio) = interviewer
+ * - YOU (mic) = user
+ *
+ * Always visible when there are transcripts. Auto-scrolls to latest.
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import { Interactable } from './Interactable'
 
 interface TranscriptLine {
@@ -13,10 +18,10 @@ interface TranscriptLine {
 
 interface Props {
   transcripts: TranscriptLine[]
+  isRecording: boolean
 }
 
-export function Transcript({ transcripts }: Props) {
-  const [collapsed, setCollapsed] = useState(true)
+export function Transcript({ transcripts, isRecording }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -25,37 +30,44 @@ export function Transcript({ transcripts }: Props) {
     }
   }, [transcripts])
 
-  if (transcripts.length === 0) return null
+  // Show recording state even with no transcripts
+  if (transcripts.length === 0) {
+    if (!isRecording) return null
+    return (
+      <div className="transcript-panel">
+        <div className="transcript-empty">
+          <span className="cursor-blink" />
+          <span>Слушаю...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Group consecutive lines from the same source
+  const grouped: { source: string; lines: string[] }[] = []
+  for (const t of transcripts) {
+    const last = grouped[grouped.length - 1]
+    if (last && last.source === t.source) {
+      last.lines.push(t.text)
+    } else {
+      grouped.push({ source: t.source, lines: [t.text] })
+    }
+  }
 
   return (
-    <Interactable className="border-b border-white/10">
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-white/50 hover:text-white/70"
-      >
-        <span className={`transition-transform ${collapsed ? '' : 'rotate-90'}`}>
-          &#9654;
-        </span>
-        Transcript ({transcripts.length})
-      </button>
-
-      {!collapsed && (
-        <div
-          ref={scrollRef}
-          className="max-h-32 overflow-y-auto px-3 pb-2 space-y-1"
-        >
-          {transcripts.slice(-20).map((t, i) => (
-            <div key={i} className="text-xs">
-              <span className={`font-medium ${
-                t.source === 'system' ? 'text-orange-300' : 'text-green-300'
-              }`}>
-                {t.source === 'system' ? 'INT' : 'YOU'}:
-              </span>{' '}
-              <span className="text-white/80">{t.text}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <Interactable className="transcript-panel">
+      <div ref={scrollRef} className="transcript-scroll">
+        {grouped.map((group, i) => (
+          <div key={i} className={`transcript-msg ${group.source === 'system' ? 'int' : 'you'}`}>
+            <span className="transcript-label">
+              {group.source === 'system' ? 'INT' : 'YOU'}
+            </span>
+            <span className="transcript-text">
+              {group.lines.join(' ')}
+            </span>
+          </div>
+        ))}
+      </div>
     </Interactable>
   )
 }

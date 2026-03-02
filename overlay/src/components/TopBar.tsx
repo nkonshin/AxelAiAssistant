@@ -1,5 +1,5 @@
 /**
- * Top bar: drag zone, logo, recording indicator, action buttons, menu.
+ * Top bar: drag zone, logo, recording toggle, action buttons, menu.
  */
 
 interface Props {
@@ -17,6 +17,11 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
     fetch('http://127.0.0.1:8765/screenshot', { method: 'POST' }).catch(() => {})
   }
 
+  const handleToggleRecording = () => {
+    const endpoint = isRecording ? '/stop' : '/start'
+    fetch(`http://127.0.0.1:8765${endpoint}`, { method: 'POST' }).catch(() => {})
+  }
+
   return (
     <div className="drag-region flex items-center gap-3 px-4 py-3">
       {/* Logo + status */}
@@ -29,7 +34,17 @@ export function TopBar({ isRecording, isConnected, onMenuClick }: Props) {
           <rect x="17" y="3" width="3" height="18" rx="1.5" fill={isConnected ? '#0a84ff' : '#48484a'} opacity={isConnected ? 0.7 : 0.5} />
         </svg>
 
-        {/* Recording dots */}
+        {/* Recording toggle button */}
+        <button
+          className={`rec-toggle no-drag ${isRecording ? 'active' : ''}`}
+          onClick={handleToggleRecording}
+          title={isRecording ? 'Остановить запись (⌘⇧M)' : 'Начать запись (⌘⇧M)'}
+        >
+          <span className="rec-toggle-dot" />
+          <span className="rec-toggle-label">{isRecording ? 'REC' : 'OFF'}</span>
+        </button>
+
+        {/* Recording dots (animated waveform) */}
         <div className="flex items-center gap-[3px]">
           {Array.from({ length: 6 }).map((_, i) => (
             <span

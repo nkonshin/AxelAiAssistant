@@ -12,7 +12,21 @@
 
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard } from 'electron'
 import { join } from 'path'
+import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs'
+import { homedir } from 'os'
 import { startBackend, stopBackend, waitForBackend } from './child_process.js'
+
+// File-based logging for packaged app debugging
+const LOG_DIR = join(homedir(), '.axel-assistant')
+const LOG_FILE = join(LOG_DIR, 'app.log')
+function log(msg: string): void {
+  const line = `[${new Date().toISOString()}] ${msg}\n`
+  try {
+    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
+    appendFileSync(LOG_FILE, line)
+  } catch {}
+  console.log(msg)
+}
 
 let mainWindow: BrowserWindow | null = null
 let isRecording = false
@@ -54,7 +68,7 @@ function createWindow(): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    mainWindow.loadFile(join(__dirname, '../../src/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -117,6 +131,8 @@ function registerHotkeys(): void {
   })
 }
 
+log(`[App] Starting (packaged=${app.isPackaged})`)
+
 app.whenReady().then(async () => {
   // Hide from Dock on macOS
   if (process.platform === 'darwin') {
@@ -126,16 +142,24 @@ app.whenReady().then(async () => {
   // Obscure process name
   app.setName('System Helper')
 
-  // Start Python backend (skips if already running, e.g. from dev.sh)
-  await startBackend()
+  try {
+    // Start Python backend (skips if already running, e.g. from dev.sh)
+    log('[App] Starting backend...')
+    await startBackend()
 
-  const backendReady = await waitForBackend()
-  if (!backendReady) {
-    console.error('[App] Python backend failed to start')
+    const backendReady = await waitForBackend()
+    if (!backendReady) {
+      log('[App] WARNING: Python backend failed to start')
+    }
+  } catch (e: any) {
+    log(`[App] Backend error: ${e.message}`)
   }
 
   createWindow()
   registerHotkeys()
+  log('[App] Startup complete')
+}).catch((e: any) => {
+  log(`[App] FATAL: ${e.message}\n${e.stack}`)
 })
 
 // IPC handlers

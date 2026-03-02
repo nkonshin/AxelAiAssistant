@@ -47,7 +47,7 @@ CLAUDE_MODEL_LABELS = {
 
 # Transcription settings — defaults (can be changed at runtime via /settings)
 TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "deepgram")  # "deepgram" or "whisper"
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "large-v3-turbo")
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
 
 # Server settings

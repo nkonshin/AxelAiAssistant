@@ -1,17 +1,18 @@
 """
-Local Whisper transcription using faster-whisper.
+Local Whisper transcription using pywhispercpp (whisper.cpp).
 
 Buffers audio chunks (100ms, int16 PCM 16kHz) and periodically runs
 Whisper transcription in a background thread. Uses simple energy-based
 VAD to detect speech pauses and emit on_utterance_end.
 
-Models are stored in ~/.axel-assistant/models/<model_name>/
-(CTranslate2 format: model.bin + config.json + tokenizer.json + vocabulary.json)
+GGML models are loaded from (in priority order):
+  1. ~/.axel-assistant/models/ggml-<name>.bin
+  2. ~/Library/Application Support/superwhisper/ggml-<name>.bin
+  3. Auto-download by pywhispercpp (model name)
 """
 
 import asyncio
 import logging
-import os
 import numpy as np
 from pathlib import Path
 from typing import Callable, Optional
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 MODELS_DIR = Path.home() / ".axel-assistant" / "models"
+SUPERWHISPER_DIR = Path.home() / "Library" / "Application Support" / "superwhisper"
 
 # VAD thresholds
 SILENCE_RMS_THRESHOLD = 300  # RMS below this = silence
@@ -27,7 +29,7 @@ SILENCE_CHUNKS_FOR_UTTERANCE_END = 15  # 15 * 100ms = 1.5s silence → utterance
 MIN_SPEECH_CHUNKS = 5  # At least 500ms of speech to trigger transcription
 PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
 
-# Global model cache: {model_name: WhisperModel}
+# Global model cache: {model_name: Model}
 _model_cache: dict = {}
 _model_loading: dict[str, asyncio.Event] = {}
 _model_error: dict[str, str] = {}
@@ -43,9 +45,24 @@ def is_model_loading(model_name: str) -> bool:
     return model_name in _model_loading
 
 
+def _find_ggml_file(model_name: str) -> Optional[Path]:
+    """Find a GGML model file on disk. Returns path or None."""
+    # 1. Explicit: ~/.axel-assistant/models/ggml-<name>.bin
+    p = MODELS_DIR / f"ggml-{model_name}.bin"
+    if p.exists():
+        return p
+
+    # 2. Superwhisper: ~/Library/Application Support/superwhisper/ggml-<name>.bin
+    p = SUPERWHISPER_DIR / f"ggml-{model_name}.bin"
+    if p.exists():
+        return p
+
+    return None
+
+
 def has_local_model(model_name: str) -> bool:
-    """Check if model files exist locally."""
-    return (MODELS_DIR / model_name / "model.bin").exists()
+    """Check if GGML model file exists locally."""
+    return _find_ggml_file(model_name) is not None
 
 
 def get_model_status(model_name: str) -> str:
@@ -61,22 +78,25 @@ def get_model_status(model_name: str) -> str:
     return "not_downloaded"
 
 
-def _resolve_model_path(model_name: str) -> str:
-    """Return local dir path if model exists locally, otherwise model name for HF download."""
-    local_dir = MODELS_DIR / model_name
-    model_bin = local_dir / "model.bin"
-    if model_bin.exists():
-        logger.info(f"Using local model: {local_dir}")
-        return str(local_dir)
-    # Fallback to huggingface_hub download (model name)
-    return model_name
-
-
 def _do_load_model(model_name: str):
-    """Load WhisperModel in a thread (blocking)."""
-    from faster_whisper import WhisperModel
-    path = _resolve_model_path(model_name)
-    return WhisperModel(path, device="cpu", compute_type="int8")
+    """Load pywhispercpp Model in a thread (blocking)."""
+    from pywhispercpp.model import Model
+
+    common_params = dict(
+        n_threads=6,
+        print_progress=False,
+        print_realtime=False,
+        print_timestamps=False,
+        language="ru",
+    )
+    local_path = _find_ggml_file(model_name)
+    if local_path:
+        logger.info(f"Loading GGML model from: {local_path}")
+        return Model(str(local_path), redirect_whispercpp_logs_to="/dev/null", **common_params)
+    else:
+        # pywhispercpp auto-downloads by model name
+        logger.info(f"No local GGML found, auto-downloading '{model_name}'...")
+        return Model(model_name, redirect_whispercpp_logs_to="/dev/null", **common_params)
 
 
 async def preload_model(model_name: str, on_status=None) -> None:
@@ -96,7 +116,7 @@ async def preload_model(model_name: str, on_status=None) -> None:
     _model_loading[model_name] = event
     _model_error.pop(model_name, None)
     try:
-        logger.info(f"Loading Whisper model '{model_name}' (download + init)...")
+        logger.info(f"Loading Whisper model '{model_name}'...")
         if on_status:
             await on_status(f"Загрузка модели Whisper ({model_name})...")
         model = await asyncio.to_thread(_do_load_model, model_name)
@@ -206,7 +226,7 @@ class WhisperTranscriber:
         self._buffer.clear()
         self._speech_count = 0
 
-        # Combine chunks into numpy array
+        # Combine chunks into numpy float32 array (whisper.cpp expects float32)
         raw = b"".join(chunks)
         audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
@@ -214,22 +234,10 @@ class WhisperTranscriber:
             return
 
         try:
-            segments, info = await asyncio.to_thread(
-                self._model.transcribe,
-                audio,
-                beam_size=3,
-                language="ru",
-                vad_filter=True,
-                vad_parameters={
-                    "threshold": 0.4,
-                    "min_silence_duration_ms": 500,
-                },
-                without_timestamps=True,
+            segments = await asyncio.to_thread(
+                self._model.transcribe, audio
             )
-            # Consume the generator in thread
-            texts = await asyncio.to_thread(
-                lambda: [s.text.strip() for s in segments if s.text.strip()]
-            )
+            texts = [s.text.strip() for s in segments if s.text.strip()]
             if texts:
                 full_text = " ".join(texts)
                 logger.info(f"[{self._label}] whisper: {full_text[:80]}")

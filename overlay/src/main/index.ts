@@ -136,15 +136,6 @@ function registerHotkeys(): void {
     mainWindow?.setOpacity(currentOpacity)
   })
 
-  // Navigate answers: previous
-  globalShortcut.register('CommandOrControl+Left', () => {
-    mainWindow?.webContents.send('hotkey-action', 'prev-answer')
-  })
-
-  // Navigate answers: next
-  globalShortcut.register('CommandOrControl+Right', () => {
-    mainWindow?.webContents.send('hotkey-action', 'next-answer')
-  })
 }
 
 log(`[App] Starting (packaged=${app.isPackaged})`)

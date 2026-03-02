@@ -17,8 +17,10 @@ from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
 
-# How long to wait after last speech before auto-triggering (seconds)
-PAUSE_TRIGGER_DELAY = 2.0
+# How long to wait after last speech (from any source) before auto-triggering.
+# 2s was too fast (triggered mid-question), 4s too slow. 3s is the sweet spot:
+# just long enough to avoid mid-question triggers with Whisper's ~3s chunks.
+PAUSE_TRIGGER_DELAY = 3.0
 
 
 class QuestionDetector:
@@ -40,15 +42,13 @@ class QuestionDetector:
         self.last_source = source
         logger.debug(f"Buffer += [{source}] {text}")
 
-        # Any speech resets the debounce timer
-        trigger_source = source == "system" or (self.mic_only_mode and source == "mic")
-        if trigger_source:
-            self._reset_debounce()
+        # Any speech from any source resets the debounce timer.
+        # This prevents triggering mid-question when someone is still talking.
+        self._reset_debounce()
 
     async def on_utterance_end(self, source: str):
-        """Called on speech pause (utterance_end from Deepgram)."""
-        trigger_source = source == "system" or (self.mic_only_mode and source == "mic")
-        if trigger_source and self.buffer:
+        """Called on speech pause (utterance_end from VAD/Deepgram)."""
+        if self.buffer:
             self._reset_debounce()
 
     def _reset_debounce(self):

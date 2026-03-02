@@ -23,7 +23,6 @@ export interface AnswerEntry {
 interface SSEState {
   transcripts: TranscriptLine[]
   answers: AnswerEntry[]
-  viewIndex: number
   pendingQuestion: string | null
   isRecording: boolean
   isConnected: boolean
@@ -38,7 +37,6 @@ export function useSSE() {
   const [state, setState] = useState<SSEState>({
     transcripts: [],
     answers: [],
-    viewIndex: 0,
     pendingQuestion: null,
     isRecording: false,
     isConnected: false,
@@ -78,11 +76,9 @@ export function useSSE() {
           answer: '',
           isComplete: false,
         }
-        const newAnswers = [...s.answers, newEntry]
         return {
           ...s,
-          answers: newAnswers,
-          viewIndex: newAnswers.length - 1,
+          answers: [...s.answers, newEntry],
           pendingQuestion: null,
         }
       })
@@ -156,42 +152,12 @@ export function useSSE() {
     }
   }, [connect])
 
-  // Navigation
-  const goNext = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      viewIndex: Math.min(s.viewIndex + 1, s.answers.length - 1),
-    }))
-  }, [])
-
-  const goPrev = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      viewIndex: Math.max(s.viewIndex - 1, 0),
-    }))
-  }, [])
-
-  const goToLatest = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      viewIndex: Math.max(s.answers.length - 1, 0),
-    }))
-  }, [])
-
   const clearError = useCallback(() => {
     setState((s) => ({ ...s, error: null }))
   }, [])
 
-  const currentEntry = state.answers[state.viewIndex] || null
-
   return {
     ...state,
-    currentEntry,
-    totalAnswers: state.answers.length,
-    currentPage: state.answers.length > 0 ? state.viewIndex + 1 : 0,
-    goNext,
-    goPrev,
-    goToLatest,
     clearError,
   }
 }

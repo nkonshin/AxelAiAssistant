@@ -5,22 +5,17 @@ import { TopBar } from './components/TopBar'
 import { InputBar } from './components/InputBar'
 import { Transcript } from './components/Transcript'
 import { AnswerView } from './components/AnswerView'
-import { AnswerNav } from './components/AnswerNav'
 import { SettingsPanel } from './components/SettingsPanel'
 
 function App() {
   const {
-    currentEntry,
+    answers,
     pendingQuestion,
-    totalAnswers,
-    currentPage,
     isRecording,
     isConnected,
     transcripts,
     error,
     statusMessage,
-    goNext,
-    goPrev,
     clearError,
   } = useSSE()
 
@@ -48,13 +43,13 @@ function App() {
     setTimeout(() => setSettingsMounted(false), 250)
   }, [])
 
-  // Copy current answer to clipboard
+  // Copy last answer to clipboard
   const handleCopy = useCallback(() => {
-    const text = currentEntry?.answer
-    if (text) {
-      window.electronAPI?.copyToClipboard(text)
+    const last = [...answers].reverse().find((a) => a.isComplete)
+    if (last?.answer) {
+      window.electronAPI?.copyToClipboard(last.answer)
     }
-  }, [currentEntry])
+  }, [answers])
 
   // Submit manual question
   const handleManualQuestion = useCallback(async (question: string) => {
@@ -101,8 +96,6 @@ function App() {
   // Hotkey handlers
   useHotkeys({
     'copy-last-answer': handleCopy,
-    'prev-answer': goPrev,
-    'next-answer': goNext,
   })
 
   return (
@@ -144,17 +137,9 @@ function App() {
       />
 
       <AnswerView
-        entry={currentEntry}
+        answers={answers}
         pendingQuestion={pendingQuestion}
         onElaborate={handleElaborate}
-      />
-
-      <AnswerNav
-        current={currentPage}
-        total={totalAnswers}
-        onPrev={goPrev}
-        onNext={goNext}
-        onCopy={handleCopy}
       />
 
       {settingsMounted && (

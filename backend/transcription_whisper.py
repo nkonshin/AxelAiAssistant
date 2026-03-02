@@ -25,7 +25,9 @@ MODELS_DIR = Path.home() / ".axel-assistant" / "models"
 SUPERWHISPER_DIR = Path.home() / "Library" / "Application Support" / "superwhisper"
 
 # VAD thresholds
-SILENCE_RMS_THRESHOLD = 300  # RMS below this = silence
+# Mic RMS is typically 500-5000+; system audio via BlackHole is much quieter (50-300).
+# Using a low threshold to catch both sources reliably.
+SILENCE_RMS_THRESHOLD = 80  # RMS below this = silence
 SILENCE_CHUNKS_FOR_UTTERANCE_END = 15  # 15 * 100ms = 1.5s silence → utterance end
 MIN_SPEECH_CHUNKS = 5  # At least 500ms of speech to trigger transcription
 PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
@@ -33,7 +35,7 @@ PROCESS_INTERVAL_CHUNKS = 30  # Process every 3 seconds max
 # Known Whisper hallucination patterns (model artifacts from YouTube training data)
 _HALLUCINATION_PATTERNS = [
     re.compile(r"продолжение\s+следует", re.IGNORECASE),
-    re.compile(r"субтитры\s+(сделал|делал|создал|подготовил)\s+\w+", re.IGNORECASE),
+    re.compile(r"субтитры\s+(сделал|делал|создал|создавал|подготовил)\s+\w+", re.IGNORECASE),
     re.compile(r"подписывайтесь\s+на\s+канал", re.IGNORECASE),
     re.compile(r"ставьте\s+лайк", re.IGNORECASE),
     re.compile(r"редактор\s+субтитров", re.IGNORECASE),
@@ -47,6 +49,16 @@ def _is_hallucination(text: str) -> bool:
     for pattern in _HALLUCINATION_PATTERNS:
         if pattern.search(text):
             return True
+
+    # Detect repetitive text: split into words and check if >60% are the same word
+    words = text.lower().split()
+    if len(words) >= 3:
+        from collections import Counter
+        counts = Counter(words)
+        most_common_count = counts.most_common(1)[0][1]
+        if most_common_count / len(words) > 0.5:
+            return True
+
     return False
 
 
@@ -54,6 +66,10 @@ def _is_hallucination(text: str) -> bool:
 _model_cache: dict = {}
 _model_loading: dict[str, asyncio.Event] = {}
 _model_error: dict[str, str] = {}
+
+# Global lock: whisper.cpp uses Metal GPU which can't handle concurrent
+# command buffers from multiple model instances. Serialize all transcribe() calls.
+_transcribe_lock = asyncio.Lock()
 
 
 def is_model_ready(model_name: str) -> bool:
@@ -109,8 +125,9 @@ def _do_load_model(model_name: str):
         print_realtime=False,
         print_timestamps=False,
         language="ru",
-        initial_prompt="Техническое собеседование по программированию. Python, Docker, FastAPI, LLM.",
-        no_speech_thold=0.5,  # Stricter no-speech threshold (default 0.6) to reduce hallucinations
+        # No initial_prompt — it causes hallucinations (Whisper repeats prompt
+        # keywords like "Python, Python, Python" during silence).
+        no_speech_thold=0.4,  # Stricter no-speech threshold to reduce hallucinations
     )
     local_path = _find_ggml_file(model_name)
     if local_path:
@@ -174,9 +191,14 @@ class WhisperTranscriber:
         self._silence_count = 0
         self._speech_count = 0
         self._utterance_ended = False
+        self._chunk_count = 0
 
     async def connect(self, label: str = "system"):
-        """Attach cached model and start processing."""
+        """Attach shared model and start processing.
+
+        All transcribers share one model instance to avoid Metal GPU conflicts.
+        Concurrent transcribe() calls are serialized via _transcribe_lock.
+        """
         self._label = label
         self._running = True
         self._buffer.clear()
@@ -185,14 +207,12 @@ class WhisperTranscriber:
         self._utterance_ended = False
 
         # Use globally cached model (must be preloaded before connect)
-        if self.model_name in _model_cache:
-            self._model = _model_cache[self.model_name]
-            logger.info(f"Whisper [{label}]: using cached model '{self.model_name}'")
-        else:
-            # Fallback: load inline (shouldn't happen if preload was called)
+        if self.model_name not in _model_cache:
             logger.warning(f"Whisper [{label}]: model not pre-loaded, loading now...")
             await preload_model(self.model_name)
-            self._model = _model_cache[self.model_name]
+
+        self._model = _model_cache[self.model_name]
+        logger.info(f"Whisper [{label}]: using shared model '{self.model_name}'")
 
         self._process_task = asyncio.create_task(self._process_loop())
 
@@ -205,6 +225,11 @@ class WhisperTranscriber:
         # Simple energy-based VAD
         audio = np.frombuffer(audio_bytes, dtype=np.int16)
         rms = int(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
+
+        # Log RMS for first 10 speech chunks to help diagnose audio levels
+        self._chunk_count += 1
+        if self._chunk_count <= 5 or (self._chunk_count <= 100 and rms > SILENCE_RMS_THRESHOLD and self._speech_count < 10):
+            logger.info(f"[{self._label}] VAD chunk #{self._chunk_count}: rms={rms}, threshold={SILENCE_RMS_THRESHOLD}")
 
         if rms < SILENCE_RMS_THRESHOLD:
             self._silence_count += 1
@@ -265,9 +290,12 @@ class WhisperTranscriber:
             return
 
         try:
-            segments = await asyncio.to_thread(
-                self._model.transcribe, audio
-            )
+            # Serialize transcription calls: Metal GPU can't handle concurrent
+            # command buffers, and whisper.cpp model is not thread-safe.
+            async with _transcribe_lock:
+                segments = await asyncio.to_thread(
+                    self._model.transcribe, audio
+                )
             texts = [s.text.strip() for s in segments if s.text.strip()]
             if texts:
                 full_text = " ".join(texts)

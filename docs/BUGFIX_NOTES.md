@@ -474,3 +474,49 @@ onHotkeyAction: (callback) => {
 | Файл | Изменение |
 |---|---|
 | `overlay/src/components/TopBar.tsx` | Родительский `<div>` → `drag-region`, spacer больше не отдельный drag |
+
+---
+
+## Session 7 — Scrollable chat feed, Whisper audio fixes, hallucination filter
+
+### Коммит: Replace paginated answers with scrollable chat feed
+
+**UI: скроллируемый чат вместо пагинации:**
+- `AnswerView.tsx` — полный рефакторинг: рендер всех `answers[]` в скроллируемом контейнере с auto-scroll вниз при новом ответе/стриминге
+- `useSSE.ts` — убраны `viewIndex`, `goNext`, `goPrev`, `currentPage`, `totalAnswers`; экспортируется `answers[]` напрямую
+- `App.tsx` — передаёт `answers` вместо `currentEntry`, убрана пагинация и хоткеи prev/next
+- `AnswerNav.tsx` — удалён (пагинация больше не нужна)
+- `main/index.ts` — убраны `Cmd+Left`/`Cmd+Right` хоткеи
+- `globals.css` — стили `.chat-entry`, `.chat-question`, `.chat-answer`
+
+### Коммит: Fix Whisper audio pipeline, hallucinations, auto-trigger timing
+
+**Metal GPU crash (Abort trap: 6):**
+- Два экземпляра модели Whisper вызывали `ggml_metal_synchronize: command buffer 0 failed with status 3`
+- Фикс: один shared model + `asyncio.Lock` для сериализации `transcribe()` вызовов
+
+**VAD threshold для BlackHole:**
+- Системное аудио через BlackHole имеет RMS 50-300, порог 300 пропускал всё
+- Фикс: `SILENCE_RMS_THRESHOLD` 300 → 80
+
+**Галлюцинации Whisper:**
+- `initial_prompt` вызывал повтор ключевых слов ("Python, Python, Python") в тишине — убран
+- "Субтитры создавал DimaTorzok" не ловился фильтром (regex `создал` не матчил `создавал`) — добавлен вариант
+- Добавлен фильтр повторяющихся слов (>50% одинаковые → галлюцинация)
+- `no_speech_thold` повышен до 0.4
+
+**Auto-trigger timing:**
+- 2s — слишком быстро (триггерился 3+ раз за один вопрос с микро-паузами)
+- 4s — слишком медленно (заметная задержка после конца вопроса)
+- 3s — золотая середина; reset таймера на ЛЮБУЮ речь (mic + system)
+
+| Файл | Изменение |
+|---|---|
+| `overlay/src/hooks/useSSE.ts` | Убрана пагинация, экспорт `answers[]` |
+| `overlay/src/components/AnswerView.tsx` | Скроллируемый чат с auto-scroll |
+| `overlay/src/components/AnswerNav.tsx` | Удалён |
+| `overlay/src/App.tsx` | Передача `answers`, убраны prev/next |
+| `overlay/src/main/index.ts` | Убраны хоткеи Cmd+Left/Right |
+| `overlay/src/styles/globals.css` | Стили чата |
+| `backend/transcription_whisper.py` | Shared model + lock, фильтр галлюцинаций, RMS threshold 80 |
+| `backend/question_detector.py` | Debounce 3s, reset на любую речь |

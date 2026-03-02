@@ -1,6 +1,6 @@
 /**
- * Main content area: displays question + AI answer with markdown rendering,
- * auto-scroll, streaming cursor, and empty state.
+ * Scrollable chat-style view: renders all answers in a single feed.
+ * Auto-scrolls to the bottom as new answers stream in.
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react'
@@ -8,29 +8,51 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-
-interface AnswerEntry {
-  question: string
-  answer: string
-  isComplete: boolean
-}
+import type { AnswerEntry } from '../hooks/useSSE'
 
 interface Props {
-  entry: AnswerEntry | null
+  answers: AnswerEntry[]
   pendingQuestion: string | null
   onElaborate?: (selectedText: string) => void
 }
 
-export function AnswerView({ entry, pendingQuestion, onElaborate }: Props) {
+const mdComponents = {
+  code({ className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || '')
+    const codeString = String(children).replace(/\n$/, '')
+
+    if (match) {
+      return (
+        <SyntaxHighlighter
+          style={oneDark}
+          language={match[1]}
+          PreTag="div"
+          customStyle={{
+            margin: '10px 0',
+            borderRadius: '8px',
+            fontSize: '12px',
+            border: '1px solid var(--border)',
+          }}
+        >
+          {codeString}
+        </SyntaxHighlighter>
+      )
+    }
+
+    return <code {...props}>{children}</code>
+  },
+}
+
+export function AnswerView({ answers, pendingQuestion, onElaborate }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; text: string } | null>(null)
 
-  // Auto-scroll as answer streams in
+  // Auto-scroll when last answer is streaming or a new answer appears
+  const lastAnswer = answers[answers.length - 1]
   useEffect(() => {
-    if (scrollRef.current && entry && !entry.isComplete) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [entry?.answer, entry?.isComplete])
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [lastAnswer?.answer, lastAnswer?.isComplete, answers.length, pendingQuestion])
 
   // Close context menu on click anywhere or scroll
   useEffect(() => {
@@ -60,7 +82,7 @@ export function AnswerView({ entry, pendingQuestion, onElaborate }: Props) {
   }, [contextMenu, onElaborate])
 
   // Empty state
-  if (!entry && !pendingQuestion) {
+  if (answers.length === 0 && !pendingQuestion) {
     return (
       <div className="empty-state">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -77,88 +99,55 @@ export function AnswerView({ entry, pendingQuestion, onElaborate }: Props) {
     )
   }
 
-  // Pending question (waiting for AI to start)
-  if (!entry && pendingQuestion) {
-    return (
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
-          <p className="text-[13px] text-[var(--accent)] font-medium">{pendingQuestion}</p>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center gap-2 text-[var(--text-tertiary)] text-[13px]">
-            <span className="cursor-blink" />
-            Генерирую ответ...
+  return (
+    <div
+      ref={scrollRef}
+      className="flex-1 overflow-y-auto min-h-0"
+      onContextMenu={handleContextMenu}
+    >
+      {answers.map((entry, i) => (
+        <div key={i} className="chat-entry">
+          {/* Question */}
+          {entry.question && (
+            <div className="chat-question">
+              {entry.question}
+            </div>
+          )}
+
+          {/* Answer */}
+          <div className="chat-answer">
+            {entry.answer ? (
+              <div className="answer-markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                  {entry.answer}
+                </ReactMarkdown>
+                {!entry.isComplete && <span className="cursor-blink" />}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-[var(--text-tertiary)] text-[13px]">
+                <span className="cursor-blink" />
+                Генерирую ответ...
+              </div>
+            )}
           </div>
         </div>
-      </div>
-    )
-  }
+      ))}
 
-  if (!entry) return null
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* Question header */}
-      {entry.question && (
-        <div className="px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-          <p className="text-[13px] text-[var(--accent)] font-medium leading-snug">
-            {entry.question}
-          </p>
+      {/* Pending question (before AI starts) */}
+      {pendingQuestion && (
+        <div className="chat-entry">
+          <div className="chat-question">{pendingQuestion}</div>
+          <div className="chat-answer">
+            <div className="flex items-center gap-2 text-[var(--text-tertiary)] text-[13px]">
+              <span className="cursor-blink" />
+              Генерирую ответ...
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Answer body */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-3"
-        onContextMenu={handleContextMenu}
-      >
-        {entry.answer ? (
-          <div className="answer-markdown">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ className, children, ...props }) {
-                  const match = /language-(\w+)/.exec(className || '')
-                  const codeString = String(children).replace(/\n$/, '')
-
-                  if (match) {
-                    return (
-                      <SyntaxHighlighter
-                        style={oneDark}
-                        language={match[1]}
-                        PreTag="div"
-                        customStyle={{
-                          margin: '10px 0',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          border: '1px solid var(--border)',
-                        }}
-                      >
-                        {codeString}
-                      </SyntaxHighlighter>
-                    )
-                  }
-
-                  return (
-                    <code {...props}>{children}</code>
-                  )
-                },
-              }}
-            >
-              {entry.answer}
-            </ReactMarkdown>
-
-            {/* Streaming cursor */}
-            {!entry.isComplete && <span className="cursor-blink" />}
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-[var(--text-tertiary)] text-[13px] pt-2">
-            <span className="cursor-blink" />
-            Генерирую ответ...
-          </div>
-        )}
-      </div>
+      {/* Scroll anchor */}
+      <div ref={bottomRef} />
 
       {/* Context menu */}
       {contextMenu && (

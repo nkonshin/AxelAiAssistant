@@ -51,6 +51,14 @@ body {
   border: 1px solid var(--border);
   overflow: hidden;
   position: relative;
+  /* Stealth: prevent I-beam cursor from leaking to screen share.
+     Input/textarea elements get explicit cursor: text override below. */
+  cursor: default;
+}
+
+.app-shell input[type="text"],
+.app-shell textarea {
+  cursor: text;
 }
 
 /* ── Drag regions ── */

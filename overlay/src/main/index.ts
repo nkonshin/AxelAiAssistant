@@ -12,7 +12,8 @@
 
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } from 'electron'
 import { join } from 'path'
-import { writeFileSync, appendFileSync, mkdirSync, existsSync } from 'fs'
+import { execSync } from 'child_process'
+import { appendFileSync, mkdirSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { startBackend, stopBackend, waitForBackend } from './child_process.js'
 
@@ -200,6 +201,10 @@ ipcMain.on('copy-to-clipboard', (_event, text: string) => {
 })
 
 ipcMain.on('quit-app', () => {
+  // Kill backend process on port 8765 before quitting
+  try {
+    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
+  } catch {}
   app.quit()
 })
 
@@ -220,6 +225,10 @@ ipcMain.on('set-click-through', (_event, enabled: boolean) => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   stopBackend()
+  // Also kill any backend on port 8765 (covers dev.sh-launched processes)
+  try {
+    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
+  } catch {}
 })
 
 app.on('window-all-closed', () => {

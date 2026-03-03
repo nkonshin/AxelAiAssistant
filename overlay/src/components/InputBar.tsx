@@ -37,6 +37,7 @@ export function InputBar({ onSubmit, disabled }: Props) {
         onKeyDown={handleKeyDown}
         placeholder="Введите запрос вручную..."
         disabled={disabled}
+        autoFocus
         className="flex-1 bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none"
       />
       <button

@@ -15,6 +15,7 @@ export interface TranscriptLine {
 }
 
 export interface AnswerEntry {
+  id: string
   question: string
   answer: string
   isComplete: boolean
@@ -32,6 +33,14 @@ interface SSEState {
 
 const BACKEND_URL = 'http://127.0.0.1:8765'
 const MAX_TRANSCRIPTS = 50
+
+function safeParse(raw: string): unknown | null {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
 
 export function useSSE() {
   const [state, setState] = useState<SSEState>({
@@ -56,7 +65,8 @@ export function useSSE() {
     }
 
     es.addEventListener('transcript', (e) => {
-      const data = JSON.parse(e.data)
+      const data = safeParse(e.data) as TranscriptLine | null
+      if (!data) return
       setState((s) => ({
         ...s,
         transcripts: [...s.transcripts.slice(-MAX_TRANSCRIPTS), data],
@@ -64,14 +74,17 @@ export function useSSE() {
     })
 
     es.addEventListener('question_detected', (e) => {
-      const data = JSON.parse(e.data)
+      const data = safeParse(e.data) as { text: string } | null
+      if (!data) return
       setState((s) => ({ ...s, pendingQuestion: data.text }))
     })
 
     es.addEventListener('ai_answer_start', (e) => {
-      const data = JSON.parse(e.data)
+      const data = safeParse(e.data) as { question?: string; id?: string } | null
+      if (!data) return
       setState((s) => {
         const newEntry: AnswerEntry = {
+          id: data.id || String(Date.now()),
           question: data.question || s.pendingQuestion || '',
           answer: '',
           isComplete: false,
@@ -85,7 +98,8 @@ export function useSSE() {
     })
 
     es.addEventListener('ai_answer_chunk', (e) => {
-      const data = JSON.parse(e.data)
+      const data = safeParse(e.data) as { text: string } | null
+      if (!data) return
       setState((s) => {
         if (s.answers.length === 0) return s
         const updated = [...s.answers]
@@ -106,25 +120,28 @@ export function useSSE() {
     })
 
     es.addEventListener('status', (e) => {
-      const data = JSON.parse(e.data)
+      const data = safeParse(e.data) as { type: string; message?: string } | null
+      if (!data) return
       setState((s) => {
         const updates: Partial<SSEState> = {}
         if (data.type === 'recording') {
           updates.isRecording = true
           updates.statusMessage = null
+          updates.error = null
         }
         if (data.type === 'stopped') {
           updates.isRecording = false
           updates.statusMessage = null
+          updates.error = null
         }
         if (data.type === 'loading') {
-          updates.statusMessage = data.message
+          updates.statusMessage = data.message ?? null
         }
         if (data.type === 'model_ready') {
           updates.statusMessage = null
         }
         if (data.type === 'error') {
-          updates.error = data.message
+          updates.error = data.message ?? null
           updates.statusMessage = null
         }
         return { ...s, ...updates }

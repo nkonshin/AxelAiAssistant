@@ -116,8 +116,8 @@ export function AnswerView({ answers, pendingQuestion, onElaborate }: Props) {
       className="flex-1 overflow-y-auto min-h-0"
       onContextMenu={handleContextMenu}
     >
-      {answers.map((entry, i) => (
-        <div key={i} className="chat-entry">
+      {answers.map((entry) => (
+        <div key={entry.id} className="chat-entry">
           {/* Question lines with colored left borders */}
           {entry.question && (
             <div className="chat-question">

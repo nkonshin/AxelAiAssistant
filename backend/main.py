@@ -210,9 +210,11 @@ async def stream(request: Request):
 async def _stop_recording():
     """Internal: stop audio + close transcribers."""
     global transcriber_mic, transcriber_system
-    # Cancel pump tasks
+    # Cancel pump tasks and wait for them to finish
     for t in _pump_tasks:
         t.cancel()
+    if _pump_tasks:
+        await asyncio.gather(*_pump_tasks, return_exceptions=True)
     _pump_tasks.clear()
     # Stop audio capture
     audio.stop()

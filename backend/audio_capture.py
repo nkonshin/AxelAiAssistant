@@ -193,3 +193,10 @@ class AudioCapture:
             self._system_stream.stop()
             self._system_stream.close()
             self._system_stream = None
+        # Close janus queues to unblock any waiting consumers
+        if self._mic_queue:
+            self._mic_queue.close()
+            self._mic_queue = None
+        if self._system_queue:
+            self._system_queue.close()
+            self._system_queue = None

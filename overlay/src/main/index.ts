@@ -203,7 +203,7 @@ ipcMain.on('copy-to-clipboard', (_event, text: string) => {
 ipcMain.on('quit-app', () => {
   // Kill backend process on port 8765 before quitting
   try {
-    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
+    execSync('lsof -ti:8765 | xargs kill -15 2>/dev/null', { stdio: 'ignore' })
   } catch {}
   app.quit()
 })
@@ -227,7 +227,7 @@ app.on('will-quit', () => {
   stopBackend()
   // Also kill any backend on port 8765 (covers dev.sh-launched processes)
   try {
-    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
+    execSync('lsof -ti:8765 | xargs kill -15 2>/dev/null', { stdio: 'ignore' })
   } catch {}
 })
 

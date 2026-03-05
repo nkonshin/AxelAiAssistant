@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    def __init__(self, openai_api_key: str, cli_proxy_url: str, cli_proxy_api_key: str = "your-api-key-1"):
+    # Models that don't support custom temperature (only default=1)
+    NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}
+
+    def __init__(self, openai_api_key: str, cli_proxy_url: str, cli_proxy_api_key: str = ""):
         # OpenAI client (direct API)
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
 
@@ -121,14 +124,13 @@ class LLMClient:
         else:
             messages = [{"role": "user", "content": f"{prompt}\n\n---\n\n{raw_text}"}]
 
-        NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}
         params = dict(
             model=use_model,
             messages=messages,
             max_completion_tokens=2048,
             stream=False,
         )
-        if use_model not in NO_TEMPERATURE_MODELS:
+        if use_model not in self.NO_TEMPERATURE_MODELS:
             params["temperature"] = 0.3
 
         response = await client.chat.completions.create(**params)
@@ -183,16 +185,13 @@ class LLMClient:
             messages.append({"role": "user",
                              "content": f"Вопрос интервьюера: {question}"})
 
-        # GPT-5 mini/nano don't support custom temperature — only default (1)
-        NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}
-
         params = dict(
             model=use_model,
             messages=messages,
             max_completion_tokens=2048,
             stream=True,
         )
-        if use_model not in NO_TEMPERATURE_MODELS:
+        if use_model not in self.NO_TEMPERATURE_MODELS:
             params["temperature"] = 0.3
 
         stream = await client.chat.completions.create(**params)

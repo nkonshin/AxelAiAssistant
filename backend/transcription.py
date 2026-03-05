@@ -76,13 +76,15 @@ class DeepgramTranscriber:
                         msg_type = data.get("type", "Results")
                         is_final = data.get("is_final", "")
                         speech_final = data.get("speech_final", "")
-                        alt = data.get("channel", {}).get("alternatives", [{}])[0]
+                        alternatives = data.get("channel", {}).get("alternatives", [])
+                        alt = alternatives[0] if alternatives else {}
                         text = alt.get("transcript", "")[:60]
                         logger.info(f"[{label}] msg#{msg_count} type={msg_type} final={is_final} speech_final={speech_final} text='{text}'")
 
                     # Final transcript of a complete phrase
                     if data.get("is_final") and data.get("speech_final"):
-                        alt = data.get("channel", {}).get("alternatives", [{}])[0]
+                        alternatives = data.get("channel", {}).get("alternatives", [])
+                        alt = alternatives[0] if alternatives else {}
                         transcript = alt.get("transcript", "")
                         if transcript.strip():
                             logger.info(f"[{label}] transcript: {transcript}")
@@ -98,6 +100,8 @@ class DeepgramTranscriber:
                 # Clean exit
                 break
 
+            except asyncio.CancelledError:
+                break
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"Deepgram WebSocket closed [{label}]: {e}")
                 if attempt < max_retries - 1:

@@ -14,6 +14,7 @@ GGML models are loaded from (in priority order):
 import asyncio
 import logging
 import re
+from collections import Counter
 import numpy as np
 from pathlib import Path
 from typing import Callable, Optional
@@ -53,7 +54,6 @@ def _is_hallucination(text: str) -> bool:
     # Detect repetitive text: split into words and check if >60% are the same word
     words = text.lower().split()
     if len(words) >= 3:
-        from collections import Counter
         counts = Counter(words)
         most_common_count = counts.most_common(1)[0][1]
         if most_common_count / len(words) > 0.5:
@@ -320,7 +320,8 @@ class WhisperTranscriber:
             self._process_task = None
 
         # Transcribe any remaining buffered audio
-        if self._buffer and self._model:
-            await self._transcribe_buffer()
-
-        self._buffer.clear()
+        try:
+            if self._buffer and self._model:
+                await self._transcribe_buffer()
+        finally:
+            self._buffer.clear()

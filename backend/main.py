@@ -58,6 +58,9 @@ _study_folder: str = ""
 # Track current generation for cancellation
 _current_generation: asyncio.Task | None = None
 
+# Screenshot buffer for study mode (attach to next question)
+_pending_screenshot: str | None = None
+
 
 async def on_transcript(source: str, speaker: int, text: str):
     """Callback when Deepgram produces a final transcript."""
@@ -106,7 +109,7 @@ async def _generate_answer(question: str, answer_id: str, screenshot_b64: str | 
 
 async def on_question_detected(question_text: str):
     """Callback when a question is detected — start answer generation."""
-    global _current_generation
+    global _current_generation, _pending_screenshot
 
     # Cancel previous generation if still running
     if _current_generation and not _current_generation.done():
@@ -117,8 +120,15 @@ async def on_question_detected(question_text: str):
     await emit_event("question_detected", {"text": question_text})
     await emit_event("ai_answer_start", {"question": question_text, "id": answer_id})
 
+    # Attach buffered screenshot if available
+    screenshot_b64 = None
+    if _pending_screenshot:
+        screenshot_b64 = _pending_screenshot
+        _pending_screenshot = None
+        logger.info("Attaching buffered screenshot to question")
+
     _current_generation = asyncio.create_task(
-        _generate_answer(question_text, answer_id)
+        _generate_answer(question_text, answer_id, screenshot_b64=screenshot_b64)
     )
 
 
@@ -340,6 +350,22 @@ async def take_screenshot():
         _generate_answer(question, answer_id, screenshot_b64=img_b64)
     )
     return {"status": "ok"}
+
+
+@app.post("/screenshot/buffer")
+async def buffer_screenshot():
+    """Capture screenshot and buffer it for the next question (study mode)."""
+    global _pending_screenshot
+    try:
+        img_b64 = screenshot_capture.capture_full_screen()
+        _pending_screenshot = img_b64
+        await emit_event("screenshot_buffered", {})
+        logger.info(f"Screenshot buffered ({len(img_b64)} bytes b64)")
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Screenshot buffer failed: {e}")
+        await emit_event("status", {"type": "error", "message": f"Screenshot failed: {e}"})
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/force-answer")

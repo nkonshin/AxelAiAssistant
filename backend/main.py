@@ -10,6 +10,8 @@ import base64
 import os
 import uuid
 import logging
+import sounddevice as sd
+import numpy as np
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, Request, UploadFile, File
@@ -747,6 +749,129 @@ async def upload_profile(file: UploadFile = File(...)):
 async def upload_job(file: UploadFile = File(...)):
     """Upload job description file, process with LLM, save as job_description.md."""
     return await _process_upload(file, "job", "job_description.md")
+
+
+# --- Audio Test ---
+
+_audio_test_task: asyncio.Task | None = None
+
+
+async def _run_audio_test():
+    """Run audio level test for 10 seconds, emitting RMS levels via SSE."""
+    import janus
+    test_mic_queue = janus.Queue()
+    test_system_queue = janus.Queue()
+
+    mic_stream = None
+    system_stream = None
+
+    try:
+        # Find mic device
+        default_input = sd.default.device[0]
+        if default_input is not None and default_input >= 0:
+            mic_idx = int(default_input)
+        else:
+            mic_idx = audio._find_any_mic()
+
+        mic_rate = audio._get_device_rate(mic_idx)
+        mic_block = int(mic_rate * 0.1)
+
+        def mic_cb(indata, frames, time_info, status):
+            test_mic_queue.sync_q.put_nowait(indata[:, 0].copy())
+
+        mic_stream = sd.InputStream(
+            device=mic_idx, channels=1, samplerate=mic_rate,
+            dtype='int16', blocksize=mic_block, callback=mic_cb,
+        )
+        mic_stream.start()
+
+        # Try BlackHole
+        blackhole_idx = None
+        try:
+            blackhole_idx = audio.find_device("BlackHole")
+        except ValueError:
+            pass
+
+        if blackhole_idx is not None:
+            sys_rate = audio._get_device_rate(blackhole_idx)
+            sys_block = int(sys_rate * 0.1)
+
+            def sys_cb(indata, frames, time_info, status):
+                test_system_queue.sync_q.put_nowait(indata[:, 0].copy())
+
+            system_stream = sd.InputStream(
+                device=blackhole_idx, channels=1, samplerate=sys_rate,
+                dtype='int16', blocksize=sys_block, callback=sys_cb,
+            )
+            system_stream.start()
+
+        has_system = blackhole_idx is not None
+
+        # Emit levels for 10 seconds
+        for _ in range(100):  # 100 * 0.1s = 10s
+            await asyncio.sleep(0.1)
+
+            mic_rms = 0.0
+            try:
+                while not test_mic_queue.async_q.empty():
+                    chunk = test_mic_queue.async_q.get_nowait()
+                    rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+                    mic_rms = max(mic_rms, rms)
+            except Exception:
+                pass
+
+            sys_rms = 0.0
+            if has_system:
+                try:
+                    while not test_system_queue.async_q.empty():
+                        chunk = test_system_queue.async_q.get_nowait()
+                        rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
+                        sys_rms = max(sys_rms, rms)
+                except Exception:
+                    pass
+
+            # Normalize to 0-1 range (int16 max RMS ~23000 for loud signal)
+            await emit_event("audio_level", {
+                "mic": min(1.0, mic_rms / 8000),
+                "system": min(1.0, sys_rms / 8000) if has_system else -1,
+            })
+
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error(f"Audio test error: {e}")
+        await emit_event("status", {"type": "error", "message": f"Audio test error: {e}"})
+    finally:
+        if mic_stream:
+            mic_stream.stop()
+            mic_stream.close()
+        if system_stream:
+            system_stream.stop()
+            system_stream.close()
+        test_mic_queue.close()
+        test_system_queue.close()
+        await emit_event("audio_test_done", {})
+
+
+@app.post("/audio-test/start")
+async def start_audio_test():
+    """Start a 10-second audio level test."""
+    global _audio_test_task
+    if audio.is_recording:
+        return {"status": "error", "message": "Stop recording before testing audio"}
+    if _audio_test_task and not _audio_test_task.done():
+        return {"status": "error", "message": "Audio test already running"}
+    _audio_test_task = asyncio.create_task(_run_audio_test())
+    return {"status": "ok"}
+
+
+@app.post("/audio-test/stop")
+async def stop_audio_test():
+    """Stop audio level test early."""
+    global _audio_test_task
+    if _audio_test_task and not _audio_test_task.done():
+        _audio_test_task.cancel()
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":

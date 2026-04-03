@@ -28,6 +28,8 @@ interface SSEState {
   isConnected: boolean
   error: string | null
   statusMessage: string | null
+  screenshotBuffered: boolean
+  activeLab: { index: number; name: string } | null
 }
 
 const BACKEND_URL = 'http://127.0.0.1:8765'
@@ -42,6 +44,8 @@ export function useSSE() {
     isConnected: false,
     error: null,
     statusMessage: null,
+    screenshotBuffered: false,
+    activeLab: null,
   })
 
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>()
@@ -80,6 +84,7 @@ export function useSSE() {
           ...s,
           answers: [...s.answers, newEntry],
           pendingQuestion: null,
+          screenshotBuffered: false,
         }
       })
     })
@@ -103,6 +108,32 @@ export function useSSE() {
         updated[updated.length - 1] = { ...last, isComplete: true }
         return { ...s, answers: updated }
       })
+    })
+
+    es.addEventListener('screenshot_buffered', () => {
+      setState((s) => ({ ...s, screenshotBuffered: true }))
+      // Auto-clear after 5 seconds
+      setTimeout(() => {
+        setState((s) => ({ ...s, screenshotBuffered: false }))
+      }, 5000)
+    })
+
+    es.addEventListener('lab_switched', (e) => {
+      const data = JSON.parse(e.data)
+      setState((s) => ({
+        ...s,
+        activeLab: { index: data.index, name: data.name },
+        answers: [],  // Clear answers on lab switch
+      }))
+    })
+
+    es.addEventListener('audio_level', (e) => {
+      const data = JSON.parse(e.data)
+      window.dispatchEvent(new CustomEvent('audio-level', { detail: data }))
+    })
+
+    es.addEventListener('audio_test_done', () => {
+      window.dispatchEvent(new CustomEvent('audio-test-done'))
     })
 
     es.addEventListener('status', (e) => {

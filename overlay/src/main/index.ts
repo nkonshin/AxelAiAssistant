@@ -13,7 +13,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } from 'electron'
 import { join } from 'path'
 import { execSync } from 'child_process'
-import { appendFileSync, mkdirSync, existsSync } from 'fs'
+import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { startBackend, stopBackend, waitForBackend } from './child_process.js'
 
@@ -125,9 +125,17 @@ function registerHotkeys(): void {
     fetch('http://127.0.0.1:8765/trigger-mic', { method: 'POST' }).catch(() => {})
   })
 
-  // Screenshot
-  globalShortcut.register('CommandOrControl+Shift+S', () => {
-    fetch('http://127.0.0.1:8765/screenshot', { method: 'POST' }).catch(() => {})
+  // Screenshot — buffer in study mode, analyze in interview mode
+  globalShortcut.register('CommandOrControl+Shift+S', async () => {
+    try {
+      const modeRes = await fetch('http://127.0.0.1:8765/settings/mode')
+      const { mode } = await modeRes.json()
+      const endpoint = mode === 'study' ? '/screenshot/buffer' : '/screenshot'
+      await fetch(`http://127.0.0.1:8765${endpoint}`, { method: 'POST' })
+    } catch {
+      // Fallback to regular screenshot
+      fetch('http://127.0.0.1:8765/screenshot', { method: 'POST' }).catch(() => {})
+    }
   })
 
   // Copy last answer
@@ -151,6 +159,17 @@ function registerHotkeys(): void {
     currentOpacity = Math.max(0.2, currentOpacity - 0.1)
     mainWindow?.setOpacity(currentOpacity)
   })
+
+  // Lab switching hotkeys (Cmd+Shift+1..9)
+  for (let i = 1; i <= 9; i++) {
+    globalShortcut.register(`CommandOrControl+Shift+${i}`, () => {
+      fetch('http://127.0.0.1:8765/settings/study/active-lab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index: i - 1 }),
+      }).catch(() => {})
+    })
+  }
 
 }
 
@@ -201,10 +220,7 @@ ipcMain.on('copy-to-clipboard', (_event, text: string) => {
 })
 
 ipcMain.on('quit-app', () => {
-  // Kill backend process on port 8765 before quitting
-  try {
-    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
-  } catch {}
+  log('[App] Quit requested')
   app.quit()
 })
 
@@ -223,12 +239,32 @@ ipcMain.on('set-click-through', (_event, enabled: boolean) => {
 })
 
 app.on('will-quit', () => {
+  log('[App] Cleaning up...')
   globalShortcut.unregisterAll()
   stopBackend()
-  // Also kill any backend on port 8765 (covers dev.sh-launched processes)
+
+  // Kill backend on port 8765 (covers dev.sh-launched processes)
   try {
     execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
   } catch {}
+
+  // Kill Vite dev server (electron-vite, esbuild) on ports 5173/5174
+  try {
+    execSync('lsof -ti:5173 -ti:5174 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
+  } catch {}
+
+  // Signal dev.sh to run its cleanup via PID file
+  try {
+    const pidFile = '/tmp/axel-assistant.pid'
+    if (existsSync(pidFile)) {
+      const pid = readFileSync(pidFile, 'utf-8').trim()
+      if (pid) {
+        execSync(`kill ${pid} 2>/dev/null`, { stdio: 'ignore' })
+      }
+    }
+  } catch {}
+
+  log('[App] Cleanup complete')
 })
 
 app.on('window-all-closed', () => {

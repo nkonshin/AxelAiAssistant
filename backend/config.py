@@ -57,3 +57,6 @@ BACKEND_PORT = 8765
 # Context settings
 MAX_CONTEXT_TOKENS = 6000
 MAX_RECENT_EXCHANGES = 5
+
+# App mode: "interview" or "study"
+APP_MODE = os.getenv("APP_MODE", "study")

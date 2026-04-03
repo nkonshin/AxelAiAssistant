@@ -30,6 +30,9 @@ class LLMClient:
         self.model = "gpt-4o-mini"
 
         self.system_prompt = self._build_system_prompt()
+        self._mode = "interview"
+        self._study_readme = ""
+        self._study_explanation = ""
 
     def _get_client(self) -> AsyncOpenAI:
         """Return the active client based on current provider."""
@@ -42,6 +45,40 @@ class LLMClient:
         self.provider = provider
         self.model = model
         logger.info(f"LLM switched to {provider} / {model}")
+
+    def set_study_context(self, readme: str, explanation: str):
+        """Switch to study mode with lab context."""
+        self._mode = "study"
+        self._study_readme = readme
+        self._study_explanation = explanation
+        self.system_prompt = self._build_study_prompt(readme, explanation)
+        logger.info("System prompt set to study mode")
+
+    def set_interview_mode(self):
+        """Switch back to interview mode."""
+        self._mode = "interview"
+        self.system_prompt = self._build_system_prompt()
+        logger.info("System prompt set to interview mode")
+
+    @staticmethod
+    def _build_study_prompt(readme: str, explanation: str) -> str:
+        return f"""Ты помогаешь студенту сдавать лабораторную работу дистанционно.
+Преподаватель задаёт вопросы по теории и реализации кода.
+
+ПРАВИЛА:
+1. Отвечай КРАТКО и ПО СУЩЕСТВУ, на русском языке
+2. Если вопрос про конкретную функцию или фрагмент кода — объясни что делает и почему так реализовано
+3. Если вопрос по теории — дай чёткое определение и связь с кодом лабораторной
+4. Не говори что ты AI-ассистент, отвечай от лица студента
+5. Ответ должен звучать как устный ответ студента, а не как текст из учебника
+6. Максимум 150-200 слов, если не задача по коду
+7. Текст вопроса получен через автоматическую транскрипцию речи — он может содержать ошибки распознавания. Попробуй понять истинный смысл вопроса из контекста лабораторной работы
+
+ЗАДАНИЕ ЛАБОРАТОРНОЙ:
+{readme}
+
+РАЗБОР ЛАБОРАТОРНОЙ (теория + код):
+{explanation}"""
 
     def reload_system_prompt(self):
         """Rebuild system prompt after profile/job file update."""
@@ -153,10 +190,13 @@ class LLMClient:
 
         messages = [{"role": "system", "content": self.system_prompt}]
 
+        # Label depends on mode
+        q_prefix = "Вопрос преподавателя:" if self._mode == "study" else "Вопрос интервьюера:"
+
         # Add conversation history (with what candidate actually said)
         for exchange in context_history:
             messages.append({"role": "user",
-                             "content": f"Вопрос интервьюера: {exchange['question']}"})
+                             "content": f"{q_prefix} {exchange['question']}"})
             if exchange.get("answer"):
                 answer_content = exchange["answer"]
                 # Include what the candidate actually said for better context
@@ -167,11 +207,12 @@ class LLMClient:
 
         # Current question
         if screenshot_b64:
+            screenshot_hint = "На скриншоте — код или задача, которую обсуждают." if self._mode == "study" else "На скриншоте — задача или код."
             messages.append({
                 "role": "user",
                 "content": [
                     {"type": "text",
-                     "text": f"Вопрос интервьюера: {question}\n\nНа скриншоте — задача или код."},
+                     "text": f"{q_prefix} {question}\n\n{screenshot_hint}"},
                     {"type": "image_url", "image_url": {
                         "url": f"data:image/jpeg;base64,{screenshot_b64}",
                         "detail": "high",
@@ -181,7 +222,7 @@ class LLMClient:
             use_model = self._get_vision_model()
         else:
             messages.append({"role": "user",
-                             "content": f"Вопрос интервьюера: {question}"})
+                             "content": f"{q_prefix} {question}"})
 
         # GPT-5 mini/nano don't support custom temperature — only default (1)
         NO_TEMPERATURE_MODELS = {"gpt-5-mini", "gpt-5-nano"}

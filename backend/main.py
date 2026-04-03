@@ -49,6 +49,12 @@ llm = LLMClient(openai_api_key=OPENAI_API_KEY or "", cli_proxy_url=CLI_PROXY_URL
 llm.set_provider(LLM_PROVIDER, LLM_MODEL)
 screenshot_capture = ScreenshotCapture()
 
+# App mode and study context
+_current_mode = "study"  # "interview" or "study"
+_study_labs: list[dict] = []  # [{name, readme, explanation, folder}]
+_active_lab_index: int = -1
+_study_folder: str = ""
+
 # Track current generation for cancellation
 _current_generation: asyncio.Task | None = None
 
@@ -114,6 +120,15 @@ async def on_question_detected(question_text: str):
     _current_generation = asyncio.create_task(
         _generate_answer(question_text, answer_id)
     )
+
+
+def _rebuild_system_prompt():
+    """Rebuild LLM system prompt based on current mode and active lab."""
+    if _current_mode == "study" and _study_labs and 0 <= _active_lab_index < len(_study_labs):
+        lab = _study_labs[_active_lab_index]
+        llm.set_study_context(lab["readme"], lab["explanation"])
+    else:
+        llm.set_interview_mode()
 
 
 question_detector = QuestionDetector(on_question_detected=on_question_detected)
@@ -265,6 +280,10 @@ async def start_recording():
             _pump_tasks.append(
                 asyncio.create_task(audio_to_transcriber(audio.system_queue, transcriber_system, "system"))
             )
+            # Echo suppression: when system has speech, suppress mic transcription
+            # (mic picks up speaker output → duplicate of system audio without headphones)
+            if provider == "whisper":
+                transcriber_mic.set_echo_source(transcriber_system)
             question_detector.mic_only_mode = False
             mode = f"mic + system ({provider})"
         else:
@@ -469,6 +488,106 @@ async def set_transcription_settings(request: Request):
             await start_recording()
 
     return {"status": "ok", "provider": provider, "model": model}
+
+
+# --- Mode settings ---
+
+@app.get("/settings/mode")
+async def get_mode():
+    """Get current app mode."""
+    return {"mode": _current_mode}
+
+@app.post("/settings/mode")
+async def set_mode(request: Request):
+    """Switch between interview and study mode."""
+    global _current_mode
+    body = await request.json()
+    mode = body.get("mode", _current_mode)
+    if mode not in ("interview", "study"):
+        return {"status": "error", "message": f"Unknown mode: {mode}"}
+    _current_mode = mode
+    _rebuild_system_prompt()
+    context.exchanges.clear()
+    return {"status": "ok", "mode": mode}
+
+
+@app.post("/settings/study/folder")
+async def set_study_folder(request: Request):
+    """Set the subject folder and scan for labs."""
+    global _study_folder, _study_labs, _active_lab_index
+    body = await request.json()
+    folder = body.get("folder", "").strip()
+
+    if not folder or not os.path.isdir(folder):
+        return {"status": "error", "message": "Invalid folder path"}
+
+    _study_folder = folder
+    _study_labs = []
+    _active_lab_index = -1
+
+    # Scan subfolders for labs (must contain EXPLANATION.md)
+    for entry in sorted(os.listdir(folder)):
+        sub = os.path.join(folder, entry)
+        if not os.path.isdir(sub):
+            continue
+        expl_path = os.path.join(sub, "EXPLANATION.md")
+        if not os.path.isfile(expl_path):
+            continue
+        readme_path = os.path.join(sub, "README.md")
+        readme = ""
+        if os.path.isfile(readme_path):
+            with open(readme_path, "r", encoding="utf-8") as f:
+                readme = f.read()
+        with open(expl_path, "r", encoding="utf-8") as f:
+            explanation = f.read()
+        _study_labs.append({
+            "name": entry,
+            "folder": sub,
+            "readme": readme,
+            "explanation": explanation,
+        })
+
+    if _study_labs:
+        _active_lab_index = 0
+        _rebuild_system_prompt()
+
+    logger.info(f"Study folder: {folder}, found {len(_study_labs)} labs")
+    return {
+        "status": "ok",
+        "folder": folder,
+        "labs": [{"name": l["name"], "index": i} for i, l in enumerate(_study_labs)],
+        "active_index": _active_lab_index,
+    }
+
+
+@app.get("/settings/study/labs")
+async def get_study_labs():
+    """List detected labs and active selection."""
+    return {
+        "folder": _study_folder,
+        "labs": [{"name": l["name"], "index": i} for i, l in enumerate(_study_labs)],
+        "active_index": _active_lab_index,
+    }
+
+@app.post("/settings/study/active-lab")
+async def set_active_lab(request: Request):
+    """Switch active lab by index."""
+    global _active_lab_index
+    body = await request.json()
+    index = body.get("index", -1)
+
+    if not _study_labs:
+        return {"status": "error", "message": "No labs loaded"}
+    if index < 0 or index >= len(_study_labs):
+        return {"status": "error", "message": f"Invalid lab index: {index}"}
+
+    _active_lab_index = index
+    _rebuild_system_prompt()
+    context.exchanges.clear()
+    lab_name = _study_labs[index]["name"]
+    await emit_event("lab_switched", {"index": index, "name": lab_name})
+    logger.info(f"Switched to lab [{index}]: {lab_name}")
+    return {"status": "ok", "index": index, "name": lab_name}
 
 
 # --- Profile & Job Description settings ---

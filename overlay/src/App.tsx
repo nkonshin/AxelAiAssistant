@@ -17,6 +17,8 @@ function App() {
     error,
     statusMessage,
     clearError,
+    screenshotBuffered,
+    activeLab,
   } = useSSE()
 
   // UI state
@@ -28,7 +30,7 @@ function App() {
   const [settingsMounted, setSettingsMounted] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [opacity, setOpacity] = useState(0.80)
-  const [inputBarVisible, setInputBarVisible] = useState(false)
+  const [inputBarVisible, setInputBarVisible] = useState(true)
   const [clickThrough, setClickThrough] = useState(false)
   const [autoAnswer, setAutoAnswer] = useState(true)
 
@@ -128,6 +130,13 @@ function App() {
         </div>
       )}
 
+      {/* Screenshot buffered indicator */}
+      {screenshotBuffered && (
+        <div className="status-toast" style={{ borderColor: 'var(--accent)' }}>
+          <span className="status-toast-text">Screenshot ready — ответ включит скриншот</span>
+        </div>
+      )}
+
       {inputBarVisible && (
         <InputBar
           onSubmit={handleManualQuestion}
@@ -156,6 +165,7 @@ function App() {
           onClickThroughChange={handleClickThroughChange}
           autoAnswer={autoAnswer}
           onAutoAnswerChange={setAutoAnswer}
+          activeLab={activeLab}
         />
       )}
     </div>

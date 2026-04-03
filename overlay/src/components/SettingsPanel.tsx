@@ -30,6 +30,7 @@ interface Props {
   onClickThroughChange: (value: boolean) => void
   autoAnswer: boolean
   onAutoAnswerChange: (value: boolean) => void
+  activeLab: { index: number; name: string } | null
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -311,6 +312,7 @@ export function SettingsPanel({
   onClickThroughChange,
   autoAnswer,
   onAutoAnswerChange,
+  activeLab,
 }: Props) {
   const [hotkeysExpanded, setHotkeysExpanded] = useState(false)
   const [llmOptions, setLlmOptions] = useState<LLMOptions | null>(null)
@@ -320,6 +322,15 @@ export function SettingsPanel({
   const [transModel, setTransModel] = useState('base')
   const [transModels, setTransModels] = useState<string[]>([])
   const [modelStatus, setModelStatus] = useState('n/a')
+
+  const [mode, setMode] = useState<'interview' | 'study'>('study')
+  const [studyFolder, setStudyFolder] = useState('')
+  const [labs, setLabs] = useState<{ name: string; index: number }[]>([])
+  const [activeLabIndex, setActiveLabIndex] = useState(-1)
+  const [audioTesting, setAudioTesting] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
+  const [systemLevel, setSystemLevel] = useState(0)
+  const [systemAvailable, setSystemAvailable] = useState(true)
 
   // Load LLM + transcription settings when panel opens
   useEffect(() => {
@@ -339,6 +350,18 @@ export function SettingsPanel({
         setTransModel(data.model)
         setTransModels(data.available_models || [])
         setModelStatus(data.model_status || 'n/a')
+      })
+      .catch(() => {})
+    fetch(`${BACKEND_URL}/settings/mode`)
+      .then((r) => r.json())
+      .then((data) => setMode(data.mode))
+      .catch(() => {})
+    fetch(`${BACKEND_URL}/settings/study/labs`)
+      .then((r) => r.json())
+      .then((data) => {
+        setStudyFolder(data.folder || '')
+        setLabs(data.labs || [])
+        setActiveLabIndex(data.active_index ?? -1)
       })
       .catch(() => {})
   }, [isOpen])
@@ -412,6 +435,96 @@ export function SettingsPanel({
     } catch {}
   }
 
+  const handleModeChange = async (newMode: 'interview' | 'study') => {
+    setMode(newMode)
+    try {
+      await fetch(`${BACKEND_URL}/settings/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: newMode }),
+      })
+    } catch {}
+  }
+
+  const handleSelectFolder = async () => {
+    const folder = prompt('Путь к папке предмета:', studyFolder || '/Users/user/Documents/PSU/3.2/Распознование образов')
+    if (!folder) return
+    try {
+      const res = await fetch(`${BACKEND_URL}/settings/study/folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder }),
+      })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        setStudyFolder(data.folder)
+        setLabs(data.labs || [])
+        setActiveLabIndex(data.active_index ?? -1)
+      }
+    } catch {}
+  }
+
+  const handleLabSwitch = async (index: number) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/settings/study/active-lab`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index }),
+      })
+      const data = await res.json()
+      if (data.status === 'ok') {
+        setActiveLabIndex(index)
+      }
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (!audioTesting) return
+    const handleLevel = (e: Event) => {
+      const { mic, system } = (e as CustomEvent).detail
+      setMicLevel(mic)
+      if (system === -1) {
+        setSystemAvailable(false)
+        setSystemLevel(0)
+      } else {
+        setSystemAvailable(true)
+        setSystemLevel(system)
+      }
+    }
+    const handleDone = () => setAudioTesting(false)
+    window.addEventListener('audio-level', handleLevel)
+    window.addEventListener('audio-test-done', handleDone)
+    return () => {
+      window.removeEventListener('audio-level', handleLevel)
+      window.removeEventListener('audio-test-done', handleDone)
+    }
+  }, [audioTesting])
+
+  const handleStartAudioTest = async () => {
+    setAudioTesting(true)
+    setMicLevel(0)
+    setSystemLevel(0)
+    setSystemAvailable(true)
+    try {
+      await fetch(`${BACKEND_URL}/audio-test/start`, { method: 'POST' })
+    } catch {
+      setAudioTesting(false)
+    }
+  }
+
+  const handleStopAudioTest = async () => {
+    try {
+      await fetch(`${BACKEND_URL}/audio-test/stop`, { method: 'POST' })
+    } catch {}
+    setAudioTesting(false)
+  }
+
+  useEffect(() => {
+    if (activeLab) {
+      setActiveLabIndex(activeLab.index)
+    }
+  }, [activeLab])
+
   const handleQuit = () => {
     window.electronAPI?.quitApp()
   }
@@ -444,6 +557,69 @@ export function SettingsPanel({
             </svg>
           </button>
         </div>
+
+        {/* Mode Toggle */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2.5">Режим</div>
+          <div className="flex gap-2">
+            <button
+              className={`setting-chip ${mode === 'interview' ? 'active' : ''}`}
+              onClick={() => handleModeChange('interview')}
+            >
+              Собеседование
+            </button>
+            <button
+              className={`setting-chip ${mode === 'study' ? 'active' : ''}`}
+              onClick={() => handleModeChange('study')}
+            >
+              Учёба
+            </button>
+          </div>
+        </div>
+
+        {mode === 'study' && (
+          <div className="px-4 pb-3">
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px -16px 12px', width: 'calc(100% + 32px)' }} />
+            <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2">Предмет</div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex-1 text-[11px] text-[var(--text-secondary)] truncate">
+                {studyFolder || 'Папка не выбрана'}
+              </div>
+              <button className="setting-chip" onClick={handleSelectFolder}>
+                Выбрать папку
+              </button>
+            </div>
+
+            {labs.length > 0 && (
+              <>
+                <div className="text-[13px] font-medium text-[var(--text-primary)] mb-2">
+                  Лабораторные ({labs.length})
+                </div>
+                <div className="space-y-1">
+                  {labs.map((lab) => (
+                    <button
+                      key={lab.index}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-[12px] transition-colors cursor-pointer ${
+                        activeLabIndex === lab.index
+                          ? 'bg-[rgba(110,123,242,0.15)] text-[var(--accent)]'
+                          : 'text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.04)]'
+                      }`}
+                      onClick={() => handleLabSwitch(lab.index)}
+                    >
+                      <span className="font-medium text-[var(--text-tertiary)] mr-2">
+                        {lab.index + 1}.
+                      </span>
+                      {lab.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-[var(--text-tertiary)] mt-2">
+                  Переключение: Cmd+Shift+1..{Math.min(labs.length, 9)}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Settings content */}
         <div className="flex-1 overflow-y-auto">
@@ -585,28 +761,89 @@ export function SettingsPanel({
             </div>
           </div>
 
-          {/* Profile section */}
-          <EditableSection
-            title="Профиль кандидата"
-            subtitle="Резюме для системного промпта AI"
-            endpoint="profile"
-            uploadEndpoint="profile/upload"
-            resetEndpoint="profile/reset"
-            placeholder={"# Профиль кандидата\n\n## Имя\n[Ваше имя]\n\n## Роль\nAI Engineer\n\n## Опыт\n- Python, Docker, LLM\n\n## Ключевые проекты\n..."}
-            isOpen={isOpen}
-          />
+          {mode === 'interview' && (
+            <>
+              {/* Profile section */}
+              <EditableSection
+                title="Профиль кандидата"
+                subtitle="Резюме для системного промпта AI"
+                endpoint="profile"
+                uploadEndpoint="profile/upload"
+                resetEndpoint="profile/reset"
+                placeholder={"# Профиль кандидата\n\n## Имя\n[Ваше имя]\n\n## Роль\nAI Engineer\n\n## Опыт\n- Python, Docker, LLM\n\n## Ключевые проекты\n..."}
+                isOpen={isOpen}
+              />
 
-          {/* Job description section */}
-          <EditableSection
-            title="Вакансия"
-            subtitle="Описание позиции для контекста AI"
-            endpoint="job"
-            uploadEndpoint="job/upload"
-            resetEndpoint="job/reset"
-            processEndpoint="job/process"
-            placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
-            isOpen={isOpen}
-          />
+              {/* Job description section */}
+              <EditableSection
+                title="Вакансия"
+                subtitle="Описание позиции для контекста AI"
+                endpoint="job"
+                uploadEndpoint="job/upload"
+                resetEndpoint="job/reset"
+                processEndpoint="job/process"
+                placeholder={"# Описание вакансии\n\n## Компания\n[Название]\n\n## Позиция\n[Роль]\n\n## Требования\n- ...\n\n## Стек\n- ..."}
+                isOpen={isOpen}
+              />
+            </>
+          )}
+
+          {/* Audio Test */}
+          <div style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] font-medium text-[var(--text-primary)]">Тест аудио</span>
+                <button
+                  className="setting-chip"
+                  onClick={audioTesting ? handleStopAudioTest : handleStartAudioTest}
+                >
+                  {audioTesting ? 'Остановить' : 'Проверить'}
+                </button>
+              </div>
+              {audioTesting && (
+                <div className="space-y-2">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-[var(--text-secondary)]">Микрофон</span>
+                      <span className="text-[10px] text-[var(--text-tertiary)]">
+                        {micLevel > 0.05 ? 'Работает' : 'Говорите в микрофон'}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-100"
+                        style={{
+                          width: `${Math.min(100, micLevel * 100)}%`,
+                          backgroundColor: 'var(--accent-green)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-[var(--text-secondary)]">Системный звук</span>
+                      <span className="text-[10px] text-[var(--text-tertiary)]">
+                        {!systemAvailable
+                          ? 'BlackHole не найден'
+                          : systemLevel > 0.05
+                            ? 'Захватывается'
+                            : 'Включите звук на компьютере'}
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[rgba(255,255,255,0.06)] overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-100"
+                        style={{
+                          width: `${Math.min(100, systemLevel * 100)}%`,
+                          backgroundColor: systemAvailable ? 'var(--accent)' : 'var(--accent-red)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Hotkeys section */}
           <div style={{ borderTop: '1px solid var(--border)' }}>

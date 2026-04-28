@@ -294,7 +294,7 @@ async def start_recording():
             )
             # Echo suppression: when system has speech, suppress mic transcription
             # (mic picks up speaker output → duplicate of system audio without headphones)
-            if provider == "whisper":
+            if provider == "whisper" and hasattr(transcriber_mic, "set_echo_source"):
                 transcriber_mic.set_echo_source(transcriber_system)
             question_detector.mic_only_mode = False
             mode = f"mic + system ({provider})"

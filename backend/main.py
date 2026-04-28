@@ -610,10 +610,12 @@ async def set_study_folder(request: Request):
     """
     global _study_folder, _study_labs, _active_lab_index
     body = await request.json()
-    folder = body.get("folder", "").strip()
+    folder = body.get("folder", "")
+    # Strip newlines but preserve trailing spaces (folder names can have them)
+    folder = folder.strip("\r\n\t")
 
     if not folder or not os.path.isdir(folder):
-        return {"status": "error", "message": "Invalid folder path"}
+        return {"status": "error", "message": f"Invalid folder path: {folder!r}"}
 
     _study_folder = folder
     _study_labs = []

@@ -539,9 +539,75 @@ async def set_mode(request: Request):
     return {"status": "ok", "mode": mode}
 
 
+def _read_ipynb(path: str) -> str:
+    """Extract markdown and code from a Jupyter notebook as plain text."""
+    import json
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            nb = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to parse notebook {path}: {e}")
+        return ""
+    parts = []
+    for cell in nb.get("cells", []):
+        ctype = cell.get("cell_type", "")
+        source = cell.get("source", [])
+        if isinstance(source, list):
+            source = "".join(source)
+        if not source.strip():
+            continue
+        if ctype == "markdown":
+            parts.append(source)
+        elif ctype == "code":
+            parts.append(f"```python\n{source}\n```")
+    return "\n\n".join(parts)
+
+
+def _read_lab_files(folder: str) -> str:
+    """Recursively read all .md, .ipynb, .py files in a folder, return concatenated content."""
+    parts = []
+    for root, _dirs, files in os.walk(folder):
+        for fname in sorted(files):
+            if fname.startswith("."):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, folder)
+            if ext in (".md", ".py"):
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    parts.append(f"=== {rel} ===\n\n{content}")
+                except Exception as e:
+                    logger.warning(f"Failed to read {fpath}: {e}")
+            elif ext == ".ipynb":
+                content = _read_ipynb(fpath)
+                if content:
+                    parts.append(f"=== {rel} ===\n\n{content}")
+    return "\n\n".join(parts)
+
+
+def _folder_has_lab_files(folder: str) -> bool:
+    """Check if folder (recursively) has any lab content files."""
+    for root, _dirs, files in os.walk(folder):
+        for fname in files:
+            if fname.startswith("."):
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in (".md", ".ipynb", ".py"):
+                return True
+    return False
+
+
 @app.post("/settings/study/folder")
 async def set_study_folder(request: Request):
-    """Set the subject folder and scan for labs."""
+    """Set the subject folder and scan for labs.
+
+    Two modes:
+    1. Classroom mode: subfolders contain EXPLANATION.md (legacy structure)
+    2. Flat mode: each subfolder = one lab, content = all .md/.ipynb/.py recursively
+       OR if no subfolders match, the selected folder itself = one lab
+    """
     global _study_folder, _study_labs, _active_lab_index
     body = await request.json()
     folder = body.get("folder", "").strip()
@@ -553,7 +619,8 @@ async def set_study_folder(request: Request):
     _study_labs = []
     _active_lab_index = -1
 
-    # Scan subfolders for labs (must contain EXPLANATION.md)
+    # Try classroom mode first: subfolders with EXPLANATION.md
+    classroom_labs = []
     for entry in sorted(os.listdir(folder)):
         sub = os.path.join(folder, entry)
         if not os.path.isdir(sub):
@@ -568,12 +635,40 @@ async def set_study_folder(request: Request):
                 readme = f.read()
         with open(expl_path, "r", encoding="utf-8") as f:
             explanation = f.read()
-        _study_labs.append({
+        classroom_labs.append({
             "name": entry,
             "folder": sub,
             "readme": readme,
             "explanation": explanation,
         })
+
+    if classroom_labs:
+        _study_labs = classroom_labs
+    else:
+        # Flat mode: try subfolders, each with arbitrary .md/.ipynb/.py files
+        for entry in sorted(os.listdir(folder)):
+            sub = os.path.join(folder, entry)
+            if not os.path.isdir(sub) or entry.startswith("."):
+                continue
+            if not _folder_has_lab_files(sub):
+                continue
+            content = _read_lab_files(sub)
+            _study_labs.append({
+                "name": entry,
+                "folder": sub,
+                "readme": "",
+                "explanation": content,
+            })
+
+        # If no subfolder labs found, treat the selected folder itself as one lab
+        if not _study_labs and _folder_has_lab_files(folder):
+            content = _read_lab_files(folder)
+            _study_labs.append({
+                "name": os.path.basename(folder.rstrip("/")) or "Lab",
+                "folder": folder,
+                "readme": "",
+                "explanation": content,
+            })
 
     if _study_labs:
         _active_lab_index = 0

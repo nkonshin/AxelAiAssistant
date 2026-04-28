@@ -10,7 +10,7 @@
  * Window is interactive by default. Click-through is opt-in via settings.
  */
 
-import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, dialog } from 'electron'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
@@ -217,6 +217,17 @@ ipcMain.on('set-ignore-mouse', (_event, ignore: boolean) => {
 
 ipcMain.on('copy-to-clipboard', (_event, text: string) => {
   clipboard.writeText(text)
+})
+
+ipcMain.handle('select-folder', async (_event, defaultPath?: string) => {
+  if (!mainWindow) return null
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Выберите папку предмета',
+    defaultPath,
+    properties: ['openDirectory'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
 })
 
 ipcMain.on('quit-app', () => {

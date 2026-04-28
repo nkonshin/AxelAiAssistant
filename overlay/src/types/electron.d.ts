@@ -5,6 +5,7 @@ interface ElectronAPI {
   quitApp: () => void
   setOpacity: (opacity: number) => void
   setClickThrough: (enabled: boolean) => void
+  selectFolder: (defaultPath?: string) => Promise<string | null>
 }
 
 declare global {

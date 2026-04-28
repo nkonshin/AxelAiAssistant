@@ -29,4 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setClickThrough: (enabled: boolean) => {
     ipcRenderer.send('set-click-through', enabled)
   },
+
+  selectFolder: (defaultPath?: string): Promise<string | null> => {
+    return ipcRenderer.invoke('select-folder', defaultPath)
+  },
 })

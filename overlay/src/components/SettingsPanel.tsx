@@ -447,7 +447,7 @@ export function SettingsPanel({
   }
 
   const handleSelectFolder = async () => {
-    const folder = prompt('Путь к папке предмета:', studyFolder || '/Users/user/Documents/PSU/3.2/Распознование образов')
+    const folder = await window.electronAPI?.selectFolder(studyFolder || undefined)
     if (!folder) return
     try {
       const res = await fetch(`${BACKEND_URL}/settings/study/folder`, {

@@ -92,7 +92,8 @@ function registerHotkeys(): void {
   reg('CommandOrControl+Shift+S', () => post('/screenshot', { mode: 'ask' }))
   reg('CommandOrControl+Shift+D', () => moveToNextDisplay())
   reg('CommandOrControl+Shift+X', () => post('/cancel'))
-  for (let i = 1; i <= 9; i++) reg(`CommandOrControl+Shift+${i}`, () => post('/lab', { index: i - 1 }))
+  // ⌘⇧3/4/5 заняты скриншотами macOS — работы переключаем через Ctrl+Shift+цифра
+  for (let i = 1; i <= 9; i++) reg(`Control+Shift+${i}`, () => post('/lab', { index: i - 1 }))
 }
 
 function moveToNextDisplay(): void {

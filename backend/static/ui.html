@@ -118,7 +118,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
   <div class="bottom">
     <input id="askInput" placeholder="Напиши вопрос и нажми Enter — если распознавание подвело">
     <button id="btnSend">Спросить</button>
-    <span class="hint">⌘⇧1/2/3 — работа · ⌘⇧M — пауза · ⌘⇧\ — скрыть окно</span>
+    <span class="hint">⌃⇧1…5 — работа · ⌘⇧M — пауза · ⌘⇧\ — скрыть окно</span>
   </div>
 </div>
 
@@ -257,7 +257,7 @@ function renderStatus(){
   // работы
   const labs=(C.pack&&C.pack.labs)||[]; const box=$('labs'); box.innerHTML='';
   if(C.mode==='interview'){ const b=document.createElement('button'); b.className='on'; b.textContent='Собеседование'; box.appendChild(b); }
-  else labs.forEach((l,i)=>{ const b=document.createElement('button'); b.textContent=l.name; b.title='⌘⇧'+(i+1); if(i===C.pack.active) b.className='on'; b.onclick=()=>post('/lab',{index:i}); box.appendChild(b); });
+  else labs.forEach((l,i)=>{ const b=document.createElement('button'); b.textContent=l.name; b.title='⌃⇧'+(i+1); if(i===C.pack.active) b.className='on'; b.onclick=()=>post('/lab',{index:i}); box.appendChild(b); });
   // баннеры
   const bn=[];
   if(En.provider==='none') bn.push(['err','Нет модели для ответов. Войди в Claude Code (в Терминале: <kbd>claude</kbd> → /login) или вставь ключ Anthropic в ⚙.','']);

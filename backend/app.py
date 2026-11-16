@@ -37,7 +37,7 @@ HOME.mkdir(parents=True, exist_ok=True)
 ENV_FILE = ROOT / ".env"
 SETTINGS_FILE = HOME / "settings.json"
 SESSIONS_DIR = HOME / "sessions"
-DEFAULT_PACK = Path.home() / "Documents/PSU/4.1/Анализ данных/КТ1/Ассистент"
+DEFAULT_PACK = Path.home() / "Documents/PSU/4.1/Анализ данных/Ассистент"
 
 load_dotenv(HOME / ".env")
 load_dotenv(ENV_FILE, override=True)
@@ -47,7 +47,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("axel")
 
 from answer_engine import AnswerEngine, ANTHROPIC_MODELS, OPENAI_MODELS  # noqa: E402
-from audio_sources import BlackHoleSource, MicSource, NullSource, TapSource, find_audiotee, tap_selftest  # noqa: E402
+from audio_sources import (BlackHoleSource, MicSource, NullSource, TapSource, default_output_device,
+                           find_audiotee, tap_selftest)  # noqa: E402
 from cc_engine import CC_MODELS, ClaudeCodePool  # noqa: E402
 from context_pack import StudyPack, interview_bundle  # noqa: E402
 from deepgram_stream import DeepgramStream  # noqa: E402
@@ -245,9 +246,21 @@ class App:
     async def _levels_loop(self):
         silent_since = time.time()
         warned = False
+        last_dev_check = 0.0
+        out_dev = await asyncio.to_thread(default_output_device)
         try:
             while self.listening:
                 now = time.time()
+                # сменилось устройство вывода (наушники/колонки) — пересоздать tap
+                if self.sys and self.sys.kind == "tap" and now - last_dev_check > 4:
+                    last_dev_check = now
+                    dev = await asyncio.to_thread(default_output_device)
+                    if dev and out_dev and dev != out_dev:
+                        logger.info(f"Устройство вывода: {out_dev} → {dev}, перезапускаю tap")
+                        self.sys.restart()
+                        await bus.emit("toast", {"level": "info", "text": f"Звук теперь идёт в «{dev}» — перезапустил захват"})
+                    if dev:
+                        out_dev = dev
                 # эхо-гейт: пока звучит системный звук, микрофон глушим (на случай колонок)
                 if self.sys and self.mic and now - self.sys.last_voice_t < 0.15:
                     self.mic.gate_until = now + 0.35

@@ -323,3 +323,17 @@ class NullSource(_Base):
         self.running = False
         if self._task:
             self._task.cancel()
+
+
+def default_output_device() -> str:
+    """Имя текущего устройства вывода по умолчанию (для перезапуска tap при смене наушников/колонок)."""
+    try:
+        out = subprocess.run(["system_profiler", "SPAudioDataType", "-json"], capture_output=True, timeout=5).stdout
+        import json as _json
+        for grp in _json.loads(out).get("SPAudioDataType", []):
+            for it in grp.get("_items", []):
+                if it.get("coreaudio_default_audio_output_device") == "spaudio_yes":
+                    return it.get("_name", "")
+    except Exception:
+        pass
+    return ""

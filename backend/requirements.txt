@@ -12,3 +12,4 @@ janus>=1.0.0
 python-docx>=1.0.0
 python-multipart>=0.0.6
 pywhispercpp>=1.4.0
+anthropic>=2.9.0

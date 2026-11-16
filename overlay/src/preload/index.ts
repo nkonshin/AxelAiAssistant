@@ -33,4 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: (defaultPath?: string): Promise<string | null> => {
     return ipcRenderer.invoke('select-folder', defaultPath)
   },
+
+  // v2: окно-суфлёр
+  setStealth: (on: boolean) => ipcRenderer.send('set-stealth', on),
+  setAlwaysOnTop: (on: boolean) => ipcRenderer.send('set-always-on-top', on),
+  moveToNextDisplay: () => ipcRenderer.send('move-to-next-display'),
+  getWindowState: (): Promise<{ stealth: boolean; onTop: boolean }> => ipcRenderer.invoke('get-window-state'),
 })

@@ -452,3 +452,33 @@ AxelAiAssistant/
 ├── README.md                # Документация (EN)
 └── README.ru.md             # Документация (RU)
 ```
+
+---
+
+## v2 (ноябрь 2026): суфлёр для защиты лаб и собеседований
+
+Новый вход бэкенда — `backend/app.py` (старый `main.py` + React-оверлей оставлены для истории).
+
+```
+audiotee (Core Audio tap) ─┐                          ┌─ AnswerEngine: claude-code (подписка, 2 тёплых процесса)
+                           ├─ DeepgramStream ×2 ─ TurnManager ─┤             anthropic API (Haiku/Sonnet 5.5, кэш 1 ч)
+sounddevice (микрофон) ────┘   (nova-3, ru)     (конец реплики) └─ openai (запасной)
+                                                                   │
+                                     SSE /events ─ static/ui.html (окно Electron или браузер)
+```
+
+| Модуль | Роль |
+|---|---|
+| `audio_sources.py` | TapSource (audiotee), MicSource (с эхо-гейтом), BlackHoleSource, NullSource (тесты), `tap_selftest` |
+| `deepgram_stream.py` | WebSocket Nova-3 ru: interim / final / UtteranceEnd, KeepAlive, переподключение |
+| `turns.py` | Реплика преподавателя копится до речи студента; ответ по паузе 0,7–1,1 с или UtteranceEnd; фильтр «угу/так»; эхо-фильтр |
+| `answer_engine.py` | Промпты (учёба/собес), формат «Скажи + Если уточнят», цепочка провайдеров с фолбэком |
+| `cc_engine.py` | Пул `claude -p --input-format stream-json` с системным промптом-файлом, обновление после 12 вопросов |
+| `context_pack.py` | Папка предмета → работы (подпапки) + `_common.md`; режим собеседования — profile/job |
+| `static/ui.html` | Интерфейс: индикаторы звука/распознавания/модели, ответ крупно, чат, история, настройки |
+
+API: `/events` (SSE), `/state`, `/listen/{start,stop,toggle,restart}`, `/ask`, `/cancel`, `/screenshot`, `/lab`, `/mode`,
+`/model`, `/keys`, `/selftest`, `/pack`, `/settings`, `/audio/test`, `/open-privacy`, `/reset`, `/debug/inject` (тест без Zoom).
+
+Electron (`overlay/src/main/index.ts`) грузит `http://127.0.0.1:8765/ui`, ставит окно на не основной монитор,
+глобальные хоткеи ⌘⇧A/S/M/D/X/1–9/\\, переключатели stealth/поверх окон через preload.

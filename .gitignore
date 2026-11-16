@@ -45,3 +45,6 @@ logs.txt
 
 # Claude Code
 .claude/
+
+# v2: локальные бинарники
+bin/

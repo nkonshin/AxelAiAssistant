@@ -1,283 +1,145 @@
 /**
- * Electron main process: stealth overlay window with hotkeys and Python backend management.
+ * Electron main process v2: окно-суфлёр для второго монитора.
  *
- * Stealth features:
- * - setContentProtection(true): hidden from screen share
- * - setAlwaysOnTop("screen-saver"): above all windows including fullscreen
- * - app.dock.hide(): no Dock icon
- * - transparent, frameless window
- *
- * Window is interactive by default. Click-through is opt-in via settings.
+ * Окно грузит интерфейс бэкенда (http://127.0.0.1:8765/ui), поэтому всё можно открыть и в браузере.
+ * - Ставится на НЕ основной монитор (основной обычно показывают в Zoom).
+ * - setContentProtection — переключаемо. На macOS 15+ Zoom всё равно видит окно,
+ *   надёжный способ — демонстрировать в Zoom только один экран.
+ * - Глобальные хоткеи работают, даже когда в фокусе Zoom.
  */
 
 import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, dialog } from 'electron'
 import { join } from 'path'
-import { execSync } from 'child_process'
-import { appendFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
+import { appendFileSync, mkdirSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { startBackend, stopBackend, waitForBackend } from './child_process.js'
 
-// File-based logging for packaged app debugging
+const API = 'http://127.0.0.1:8765'
 const LOG_DIR = join(homedir(), '.axel-assistant')
 const LOG_FILE = join(LOG_DIR, 'app.log')
 function log(msg: string): void {
-  const line = `[${new Date().toISOString()}] ${msg}\n`
   try {
     if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true })
-    appendFileSync(LOG_FILE, line)
+    appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`)
   } catch {}
   console.log(msg)
 }
 
-let mainWindow: BrowserWindow | null = null
-let isRecording = false
-let currentOpacity = 0.80
-let isClickThrough = false
+let win: BrowserWindow | null = null
+let stealth = true
+let onTop = false
+
+function post(path: string, body: object = {}): void {
+  fetch(API + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch((e) => log(`[POST ${path}] ${e}`))
+}
+
+function pickDisplay(): Electron.Display {
+  const primary = screen.getPrimaryDisplay()
+  const others = screen.getAllDisplays().filter((d) => d.id !== primary.id)
+  // самый большой не основной монитор; если его нет — основной
+  return others.sort((a, b) => b.workArea.width * b.workArea.height - a.workArea.width * a.workArea.height)[0] || primary
+}
+
+function placeOn(d: Electron.Display): void {
+  if (!win) return
+  const wa = d.workArea
+  const w = Math.min(1250, Math.round(wa.width * 0.9))
+  const h = Math.min(950, Math.round(wa.height * 0.9))
+  win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + Math.round((wa.height - h) / 2), width: w, height: h })
+}
 
 function createWindow(): void {
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize
-  const winW = Math.round(screenW * 0.6)
-  const winH = Math.round(screenH * 0.5)
-  const winX = Math.round((screenW - winW) / 2)
-
-  mainWindow = new BrowserWindow({
-    width: winW,
-    height: winH,
-    x: winX,
-    y: 0,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    resizable: true,
-    opacity: currentOpacity,
+  win = new BrowserWindow({
+    width: 1200,
+    height: 900,
+    title: 'Заметки',
+    backgroundColor: '#111315',
+    show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   })
-
-  // Stealth: hide from screen capture
-  mainWindow.setContentProtection(true)
-
-  // Above ALL windows including fullscreen
-  mainWindow.setAlwaysOnTop(true, 'screen-saver')
-
-  // Window is interactive by default (NOT click-through)
-  // Click-through can be toggled via settings panel
-
-  // Visible on all workspaces and fullscreen spaces
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-
-  // Load the renderer
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  placeOn(pickDisplay())
+  win.setContentProtection(stealth)
+  win.loadURL(`${API}/ui`)
+  win.once('ready-to-show', () => win?.showInactive())
+  // если бэкенд перезапускался — перезагрузить страницу
+  win.webContents.on('did-fail-load', () => setTimeout(() => win?.loadURL(`${API}/ui`), 1500))
+  win.on('page-title-updated', (e) => e.preventDefault())
+  // macOS иногда сбрасывает флаг при активации — выставляем заново
+  win.on('focus', () => win?.setContentProtection(stealth))
+  win.on('show', () => win?.setContentProtection(stealth))
 }
 
 function registerHotkeys(): void {
-  // Toggle overlay visibility
-  globalShortcut.register('CommandOrControl+Shift+\\', () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide()
-    } else {
-      mainWindow?.show()
-    }
-  })
-
-  // Toggle recording
-  globalShortcut.register('CommandOrControl+Shift+M', async () => {
-    const endpoint = isRecording ? '/stop' : '/start'
-    try {
-      const res = await fetch(`http://127.0.0.1:8765${endpoint}`, { method: 'POST' })
-      if (res.ok) isRecording = !isRecording
-    } catch (e) {
-      console.error('[Hotkey] Recording toggle failed:', e)
-    }
-    // Ensure window stays interactive after hotkey (fixes macOS transparent window focus loss)
-    if (!isClickThrough) {
-      mainWindow?.setIgnoreMouseEvents(false)
-    }
-  })
-
-  // Toggle click-through (Cmd+Shift+T)
-  globalShortcut.register('CommandOrControl+Shift+T', () => {
-    isClickThrough = !isClickThrough
-    if (isClickThrough) {
-      mainWindow?.setIgnoreMouseEvents(true, { forward: true })
-    } else {
-      mainWindow?.setIgnoreMouseEvents(false)
-    }
-    log(`[Hotkey] Click-through: ${isClickThrough}`)
-  })
-
-  // Force answer (all buffers)
-  globalShortcut.register('CommandOrControl+Shift+A', () => {
-    fetch('http://127.0.0.1:8765/force-answer', { method: 'POST' }).catch(() => {})
-  })
-
-  // Mic trigger: send candidate's speech to LLM (F5)
-  globalShortcut.register('F5', () => {
-    fetch('http://127.0.0.1:8765/trigger-mic', { method: 'POST' }).catch(() => {})
-  })
-
-  // Screenshot — buffer in study mode, analyze in interview mode
-  globalShortcut.register('CommandOrControl+Shift+S', async () => {
-    try {
-      const modeRes = await fetch('http://127.0.0.1:8765/settings/mode')
-      const { mode } = await modeRes.json()
-      const endpoint = mode === 'study' ? '/screenshot/buffer' : '/screenshot'
-      await fetch(`http://127.0.0.1:8765${endpoint}`, { method: 'POST' })
-    } catch {
-      // Fallback to regular screenshot
-      fetch('http://127.0.0.1:8765/screenshot', { method: 'POST' }).catch(() => {})
-    }
-  })
-
-  // Copy last answer
-  globalShortcut.register('CommandOrControl+Shift+C', () => {
-    mainWindow?.webContents.send('hotkey-action', 'copy-last-answer')
-  })
-
-  // Toggle input bar visibility
-  globalShortcut.register('CommandOrControl+Shift+I', () => {
-    mainWindow?.webContents.send('hotkey-action', 'toggle-input-bar')
-  })
-
-  // Increase opacity
-  globalShortcut.register('CommandOrControl+Shift+Up', () => {
-    currentOpacity = Math.min(1.0, currentOpacity + 0.1)
-    mainWindow?.setOpacity(currentOpacity)
-  })
-
-  // Decrease opacity
-  globalShortcut.register('CommandOrControl+Shift+Down', () => {
-    currentOpacity = Math.max(0.2, currentOpacity - 0.1)
-    mainWindow?.setOpacity(currentOpacity)
-  })
-
-  // Lab switching hotkeys (Cmd+Shift+1..9)
-  for (let i = 1; i <= 9; i++) {
-    globalShortcut.register(`CommandOrControl+Shift+${i}`, () => {
-      fetch('http://127.0.0.1:8765/settings/study/active-lab', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ index: i - 1 }),
-      }).catch(() => {})
-    })
+  const reg = (acc: string, fn: () => void) => {
+    if (!globalShortcut.register(acc, fn)) log(`[Hotkey] не удалось занять ${acc}`)
   }
-
+  reg('CommandOrControl+Shift+\\', () => {
+    if (win?.isVisible()) win.hide()
+    else win?.showInactive()
+  })
+  reg('CommandOrControl+Shift+A', () => post('/ask'))
+  reg('F5', () => post('/ask'))
+  reg('CommandOrControl+Shift+M', () => post('/listen/toggle'))
+  reg('CommandOrControl+Shift+S', () => post('/screenshot', { mode: 'ask' }))
+  reg('CommandOrControl+Shift+D', () => moveToNextDisplay())
+  reg('CommandOrControl+Shift+X', () => post('/cancel'))
+  for (let i = 1; i <= 9; i++) reg(`CommandOrControl+Shift+${i}`, () => post('/lab', { index: i - 1 }))
 }
 
-log(`[App] Starting (packaged=${app.isPackaged})`)
+function moveToNextDisplay(): void {
+  if (!win) return
+  const all = screen.getAllDisplays()
+  const cur = screen.getDisplayMatching(win.getBounds())
+  const idx = all.findIndex((d) => d.id === cur.id)
+  placeOn(all[(idx + 1) % all.length])
+}
+
+log(`[App v2] Starting (packaged=${app.isPackaged})`)
 
 app.whenReady().then(async () => {
-  // Hide from Dock on macOS
-  if (process.platform === 'darwin') {
-    app.dock.hide()
-  }
-
-  // Obscure process name
-  app.setName('System Helper')
-
+  if (process.platform === 'darwin') app.dock.hide()
+  app.setName('Notes Helper')
   try {
-    // Start Python backend (skips if already running, e.g. from dev.sh)
-    log('[App] Starting backend...')
     await startBackend()
-
-    const backendReady = await waitForBackend()
-    if (!backendReady) {
-      log('[App] WARNING: Python backend failed to start')
-    }
+    if (!(await waitForBackend(100))) log('[App] WARNING: backend не ответил за 20 с')
   } catch (e: any) {
     log(`[App] Backend error: ${e.message}`)
   }
-
   createWindow()
   registerHotkeys()
-  log('[App] Startup complete')
-}).catch((e: any) => {
-  log(`[App] FATAL: ${e.message}\n${e.stack}`)
-})
+  log('[App v2] Startup complete')
+}).catch((e: any) => log(`[App] FATAL: ${e.message}\n${e.stack}`))
 
-// IPC handlers
-ipcMain.on('set-ignore-mouse', (_event, ignore: boolean) => {
-  // Only toggle mouse events when click-through mode is active.
-  // Without this guard, Interactable components in the renderer
-  // (e.g. Transcript) would accidentally put the window into
-  // click-through mode on mouseleave even when the user hasn't
-  // enabled click-through, making TopBar buttons unresponsive.
-  if (!isClickThrough) return
-  mainWindow?.setIgnoreMouseEvents(ignore, { forward: true })
+ipcMain.on('set-stealth', (_e, on: boolean) => {
+  stealth = !!on
+  win?.setContentProtection(stealth)
+  log(`[App] stealth=${stealth}`)
 })
-
-ipcMain.on('copy-to-clipboard', (_event, text: string) => {
-  clipboard.writeText(text)
+ipcMain.on('set-always-on-top', (_e, on: boolean) => {
+  onTop = !!on
+  win?.setAlwaysOnTop(onTop, 'floating')
 })
-
-ipcMain.handle('select-folder', async (_event, defaultPath?: string) => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Выберите папку предмета',
-    defaultPath,
-    properties: ['openDirectory'],
-  })
-  if (result.canceled || result.filePaths.length === 0) return null
-  return result.filePaths[0]
+ipcMain.on('move-to-next-display', () => moveToNextDisplay())
+ipcMain.handle('get-window-state', () => ({ stealth, onTop }))
+ipcMain.on('copy-to-clipboard', (_e, text: string) => clipboard.writeText(text))
+ipcMain.handle('select-folder', async (_e, defaultPath?: string) => {
+  if (!win) return null
+  const r = await dialog.showOpenDialog(win, { title: 'Папка с материалами', defaultPath, properties: ['openDirectory'] })
+  return r.canceled || !r.filePaths.length ? null : r.filePaths[0]
 })
-
-ipcMain.on('quit-app', () => {
-  log('[App] Quit requested')
-  app.quit()
-})
-
-ipcMain.on('set-opacity', (_event, opacity: number) => {
-  currentOpacity = Math.max(0.2, Math.min(1.0, opacity))
-  mainWindow?.setOpacity(currentOpacity)
-})
-
-ipcMain.on('set-click-through', (_event, enabled: boolean) => {
-  isClickThrough = enabled
-  if (enabled) {
-    mainWindow?.setIgnoreMouseEvents(true, { forward: true })
-  } else {
-    mainWindow?.setIgnoreMouseEvents(false)
-  }
-})
+ipcMain.on('quit-app', () => app.quit())
 
 app.on('will-quit', () => {
-  log('[App] Cleaning up...')
   globalShortcut.unregisterAll()
   stopBackend()
-
-  // Kill backend on port 8765 (covers dev.sh-launched processes)
-  try {
-    execSync('lsof -ti:8765 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
-  } catch {}
-
-  // Kill Vite dev server (electron-vite, esbuild) on ports 5173/5174
-  try {
-    execSync('lsof -ti:5173 -ti:5174 | xargs kill -9 2>/dev/null', { stdio: 'ignore' })
-  } catch {}
-
-  // Signal dev.sh to run its cleanup via PID file
-  try {
-    const pidFile = '/tmp/axel-assistant.pid'
-    if (existsSync(pidFile)) {
-      const pid = readFileSync(pidFile, 'utf-8').trim()
-      if (pid) {
-        execSync(`kill ${pid} 2>/dev/null`, { stdio: 'ignore' })
-      }
-    }
-  } catch {}
-
-  log('[App] Cleanup complete')
 })
-
-app.on('window-all-closed', () => {
-  app.quit()
-})
+app.on('window-all-closed', () => app.quit())

@@ -34,7 +34,7 @@ function getBackendDir(): string {
 }
 
 function getBackendPath(): string {
-  return path.join(getBackendDir(), 'main.py')
+  return path.join(getBackendDir(), 'app.py')
 }
 
 function findPython(): string {

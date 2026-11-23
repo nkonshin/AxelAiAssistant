@@ -23,7 +23,7 @@ from typing import AsyncGenerator, Optional
 logger = logging.getLogger(__name__)
 
 WORK_DIR = Path.home() / ".axel-assistant" / "cc-work"
-MAX_QUESTIONS_PER_WORKER = 12
+MAX_QUESTIONS_PER_WORKER = 20
 CC_MODELS = {
     "cc-haiku": ("haiku", "Claude Haiku (подписка) — быстрый"),
     "cc-sonnet": ("sonnet", "Claude Sonnet (подписка) — умнее"),

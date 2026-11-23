@@ -473,7 +473,7 @@ sounddevice (микрофон) ────┘   (nova-3, ru)     (конец р
 | `deepgram_stream.py` | WebSocket Nova-3 ru: interim / final / UtteranceEnd, KeepAlive, переподключение |
 | `turns.py` | Реплика преподавателя копится до речи студента; ответ по паузе 0,7–1,1 с или UtteranceEnd; фильтр «угу/так»; эхо-фильтр |
 | `answer_engine.py` | Промпты (учёба/собес), формат «Скажи + Если уточнят», цепочка провайдеров с фолбэком |
-| `cc_engine.py` | Пул `claude -p --input-format stream-json` с системным промптом-файлом, обновление после 12 вопросов |
+| `cc_engine.py` | Пул `claude -p --input-format stream-json` с системным промптом-файлом, обновление после 20 вопросов |
 | `context_pack.py` | Папка предмета → работы (подпапки) + `_common.md`; режим собеседования — profile/job |
 | `static/ui.html` | Интерфейс: индикаторы звука/распознавания/модели, ответ крупно, чат, история, настройки |
 

@@ -7,11 +7,12 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "electron-vite build && electron-builder --mac"
+    "dist": "electron-vite build && electron-builder --mac",
+    "app": "electron-vite build && electron-builder --mac dir"
   },
   "build": {
     "appId": "com.axel.interview-assistant",
-    "productName": "Axel AI Assistant",
+    "productName": "Notes Helper",
     "directories": {
       "output": "dist"
     },
@@ -34,10 +35,18 @@
     "afterPack": "./build/fix-asar-integrity.js",
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "Микрофон нужен, чтобы расшифровывать твои ответы.",
+        "NSAudioCaptureUsageDescription": "Системный звук нужен, чтобы слышать собеседника из звонка."
+      }
     },
     "dmg": {
-      "title": "Axel AI Assistant"
+      "title": "Notes Helper"
     }
   },
   "dependencies": {

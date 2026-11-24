@@ -48,7 +48,7 @@ logger = logging.getLogger("axel")
 
 from answer_engine import AnswerEngine, ANTHROPIC_MODELS, OPENAI_MODELS  # noqa: E402
 from audio_sources import (BlackHoleSource, MicSource, NullSource, TapSource, default_output_device,
-                           find_audiotee, tap_selftest)  # noqa: E402
+                           find_audiotee, tap_selftest, HOST_APP)  # noqa: E402
 from cc_engine import CC_MODELS, ClaudeCodePool  # noqa: E402
 from context_pack import StudyPack, interview_bundle  # noqa: E402
 from deepgram_stream import DeepgramStream  # noqa: E402
@@ -518,7 +518,7 @@ async def screenshot(request: Request):
     display = int(body.get("display", S.get("shot_display", 1)))
     shot = await asyncio.to_thread(A.capture_screen, display)
     if not shot:
-        await bus.emit("toast", {"level": "error", "text": "Скриншот не получился: дай Terminal разрешение «Запись экрана»"})
+        await bus.emit("toast", {"level": "error", "text": f"Скриншот не получился: дай {HOST_APP} разрешение «Запись экрана»"})
         return {"ok": False}
     if body.get("mode", "ask") == "attach":
         A.pending_shot = shot
@@ -650,7 +650,7 @@ async def audio_test():
         ok = A.sys.nonzero_seen
         A.sys.nonzero_seen = ok or before
         res = {"ok": ok, "message": "Системный звук слышен" if ok else
-               "Системный звук не слышен: дай разрешение «Запись системного звука» для Terminal "
+               f"Системный звук не слышен: дай разрешение «Запись системного звука» для {HOST_APP} "
                "(Настройки → Конфиденциальность и безопасность → Запись экрана и системного звука), потом перезапусти ассистента."}
     else:
         res = await tap_selftest()

@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}svg{display:block}</style></head><body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2f35"/><stop offset="1" stop-color="#121417"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f7f8"/><stop offset="1" stop-color="#dfe3e7"/>
+    </linearGradient>
+    <linearGradient id="wave" gradientUnits="userSpaceOnUse" x1="330" y1="0" x2="660" y2="0">
+      <stop offset="0" stop-color="#5aa2ff"/><stop offset="1" stop-color="#3ccf8e"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="tile" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)" filter="url(#tile)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="185" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="3"/>
+  <g filter="url(#sh)">
+    <rect x="262" y="214" width="500" height="596" rx="56" fill="url(#paper)"/>
+  </g>
+  <rect x="262" y="214" width="500" height="92" rx="56" fill="#f2b84b"/>
+  <rect x="262" y="262" width="500" height="44" fill="#f2b84b"/>
+  <g stroke-linecap="round" stroke-width="30">
+    <line x1="330" y1="390" x2="694" y2="390" stroke="#9aa3ac"/>
+    <line x1="330" y1="462" x2="640" y2="462" stroke="#9aa3ac"/>
+    <line x1="330" y1="534" x2="580" y2="534" stroke="#b7bec5"/>
+  </g>
+  <g stroke="url(#wave)" stroke-linecap="round" stroke-width="30">
+    <line x1="345" y1="660" x2="345" y2="700"/>
+    <line x1="405" y1="630" x2="405" y2="730"/>
+    <line x1="465" y1="605" x2="465" y2="755"/>
+    <line x1="525" y1="640" x2="525" y2="720"/>
+    <line x1="585" y1="618" x2="585" y2="742"/>
+    <line x1="645" y1="650" x2="645" y2="710"/>
+  </g>
+</svg></body></html>

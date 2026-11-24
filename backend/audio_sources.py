@@ -4,7 +4,8 @@
 - MicSource — микрофон (sounddevice), 16 кГц mono int16, чанки по 100 мс.
 - TapSource — системный звук через Core Audio tap (утилита audiotee): всё, что играет на Mac,
   в том числе голос преподавателя из Zoom. Не нужен BlackHole и Multi-Output.
-  Разрешение: «Запись системного звука» для приложения, из которого запущен ассистент (Terminal).
+  Разрешение: «Запись системного звука» для приложения, из которого запущен ассистент
+  (Terminal или Notes Helper.app — имя приходит в AXEL_HOST_APP).
   Без разрешения tap отдаёт нули — это ловит проверка /audio/test.
 - BlackHoleSource — старый путь через виртуальное устройство (если tap не подошёл).
 
@@ -35,6 +36,10 @@ AUDIOTEE_CANDIDATES = [
     Path(__file__).resolve().parent.parent / "bin" / "audiotee",
     Path.home() / ".axel-assistant" / "bin" / "audiotee",
 ]
+
+
+# Приложение, от имени которого macOS спрашивает разрешения (Electron-сборка передаёт своё имя).
+HOST_APP = os.environ.get("AXEL_HOST_APP") or "Terminal"
 
 
 def find_audiotee() -> Optional[str]:
@@ -294,7 +299,7 @@ async def tap_selftest(timeout: float = 4.0) -> dict:
         return {"ok": False, "reason": "no_data", "message": "audiotee не отдаёт данные"}
     if peak <= 200:
         return {"ok": False, "reason": "silence",
-                "message": "Звук системы не слышен: дай разрешение «Запись системного звука» приложению Terminal "
+                "message": f"Звук системы не слышен: дай разрешение «Запись системного звука» приложению {HOST_APP} "
                            "(Настройки → Конфиденциальность → Запись экрана и системного звука), затем перезапусти ассистента."}
     return {"ok": True, "peak": peak, "message": "Системный звук слышен"}
 

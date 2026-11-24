@@ -8,6 +8,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    // папка проекта, из которой собрано .app: оттуда приложение запускает живой бэкенд
+    define: { __AXEL_PROJECT_DIR__: JSON.stringify(resolve(__dirname, '..')) },
     build: {
       outDir: 'out/main',
     },

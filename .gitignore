@@ -37,8 +37,7 @@ CLAUDE.md
 backend/profile.md
 backend/job_description.md
 
-# Build artifacts
-overlay/build/
+# overlay/build/ — ресурсы сборки (иконка, afterPack-хук), не артефакты: артефакты в overlay/dist/
 
 # Local logs
 logs.txt

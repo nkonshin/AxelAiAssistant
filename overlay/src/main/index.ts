@@ -12,7 +12,7 @@ import { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen, dialog 
 import { join } from 'path'
 import { appendFileSync, mkdirSync, existsSync } from 'fs'
 import { homedir } from 'os'
-import { startBackend, stopBackend, waitForBackend } from './child_process.js'
+import { startBackend, stopBackend, waitForBackend, backendLogPath } from './child_process.js'
 
 const API = 'http://127.0.0.1:8765'
 const LOG_DIR = join(homedir(), '.axel-assistant')
@@ -52,6 +52,10 @@ function placeOn(d: Electron.Display): void {
   win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + Math.round((wa.height - h) / 2), width: w, height: h })
 }
 
+const LOADING_HTML = `<!doctype html><meta charset="utf-8"><title>Заметки</title>
+<body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#111315;color:#a9b0b7;font:16px -apple-system,system-ui,sans-serif">
+Запускаю ассистента…</body>`
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1200,
@@ -68,7 +72,8 @@ function createWindow(): void {
   })
   placeOn(pickDisplay())
   win.setContentProtection(stealth)
-  win.loadURL(`${API}/ui`)
+  // пока бэкенд поднимается — заставка, чтобы после клика по иконке сразу было окно
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(LOADING_HTML))
   win.once('ready-to-show', () => win?.showInactive())
   // если бэкенд перезапускался — перезагрузить страницу
   win.webContents.on('did-fail-load', () => setTimeout(() => win?.loadURL(`${API}/ui`), 1500))
@@ -107,17 +112,41 @@ function moveToNextDisplay(): void {
 
 log(`[App v2] Starting (packaged=${app.isPackaged})`)
 
+// Второй запуск (клик по иконке, когда ассистент уже работает) — просто показать окно
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!win) return
+    win.showInactive()
+    win.focus()
+  })
+}
+
 app.whenReady().then(async () => {
+  if (!gotLock) return
   if (process.platform === 'darwin') app.dock.hide()
   app.setName('Notes Helper')
+  let backendOk = false
+  createWindow()
+  registerHotkeys()
   try {
     await startBackend()
-    if (!(await waitForBackend(100))) log('[App] WARNING: backend не ответил за 20 с')
+    backendOk = await waitForBackend(200)
+    if (!backendOk) log('[App] WARNING: backend не ответил за 40 с')
   } catch (e: any) {
     log(`[App] Backend error: ${e.message}`)
   }
-  createWindow()
-  registerHotkeys()
+  // не ответил — всё равно грузим интерфейс: did-fail-load будет переподключаться
+  win?.loadURL(`${API}/ui`)
+  if (!backendOk && app.isPackaged) {
+    dialog.showMessageBox({
+      type: 'warning',
+      message: 'Бэкенд ассистента не запустился',
+      detail: `Окно будет переподключаться само. Если не помогло — лог: ${backendLogPath}`,
+    })
+  }
   log('[App v2] Startup complete')
 }).catch((e: any) => log(`[App] FATAL: ${e.message}\n${e.stack}`))
 

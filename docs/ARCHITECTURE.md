@@ -480,5 +480,13 @@ sounddevice (микрофон) ────┘   (nova-3, ru)     (конец р
 API: `/events` (SSE), `/state`, `/listen/{start,stop,toggle,restart}`, `/ask`, `/cancel`, `/screenshot`, `/lab`, `/mode`,
 `/model`, `/keys`, `/selftest`, `/pack`, `/settings`, `/audio/test`, `/open-privacy`, `/reset`, `/debug/inject` (тест без Zoom).
 
+**Приложение (24.11.2026):** `scripts/install_app.sh` → `npm run app` (electron-vite + electron-builder `--mac dir`) →
+`/Applications/Notes Helper.app` + ярлык «Ассистент» на рабочем столе. Подпись ad-hoc (`identity: "-"`), без hardened runtime;
+в Info.plist `LSUIElement` (нет Dock) и `NSMicrophoneUsageDescription` / `NSAudioCaptureUsageDescription` — без них macOS
+не даёт процессам приложения (python → audiotee) микрофон и системный звук. `child_process.ts` в собранном режиме берёт
+живой бэкенд из папки проекта (`~/.axel-assistant/project_dir`, иначе путь сборки `__AXEL_PROJECT_DIR__`) и его `.venv`,
+окружение — из `zsh -ilc env` (PATH к `claude`, прокси), лог — `~/.axel-assistant/backend.out`, имя приложения для
+подсказок о разрешениях — в `AXEL_HOST_APP`. Сначала окно-заставка, потом `/ui`; второй запуск показывает окно (single instance).
+
 Electron (`overlay/src/main/index.ts`) грузит `http://127.0.0.1:8765/ui`, ставит окно на не основной монитор,
 глобальные хоткеи ⌘⇧A/S/M/D/X/1–9/\\, переключатели stealth/поверх окон через preload.

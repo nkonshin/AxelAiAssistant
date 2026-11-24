@@ -163,7 +163,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
   <div class="row"><label>Экран для скриншота:</label><select id="shotSel"><option value="1">Основной (1)</option><option value="2">Второй (2)</option><option value="3">Третий (3)</option></select></div>
 
   <h3>Разное</h3>
-  <div class="row"><button id="btnReset">Очистить разговор</button></div>
+  <div class="row"><button id="btnReset">Очистить разговор</button><button id="btnQuit" style="display:none">Выключить ассистента</button></div>
   <div class="small">Журнал сессий: ~/.axel-assistant/sessions</div>
 </div>
 <div class="toast" id="toast"></div>
@@ -379,6 +379,7 @@ $('btnReset').onclick=()=>post('/reset');
 $('stealthChk').onchange=e=>{ if(E&&E.setStealth) E.setStealth(e.target.checked); else toast('Работает только в окне приложения','warn'); };
 $('topChk').onchange=e=>{ if(E&&E.setAlwaysOnTop) E.setAlwaysOnTop(e.target.checked); };
 $('btnDisplay').onclick=()=>{ if(E&&E.moveToNextDisplay) E.moveToNextDisplay(); };
+if(E&&E.quitApp){ $('btnQuit').style.display=''; $('btnQuit').onclick=()=>E.quitApp(); }
 if(E&&E.getWindowState){ E.getWindowState().then(s=>{ if(s){ $('stealthChk').checked=!!s.stealth; $('topChk').checked=!!s.onTop; } }); }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') $('drawer').classList.remove('open'); });
 connect();

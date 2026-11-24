@@ -471,7 +471,7 @@ sounddevice (микрофон) ────┘   (nova-3, ru)     (конец р
 |---|---|
 | `audio_sources.py` | TapSource (audiotee), MicSource (с эхо-гейтом), BlackHoleSource, NullSource (тесты), `tap_selftest` |
 | `deepgram_stream.py` | WebSocket Nova-3 ru: interim / final / UtteranceEnd, KeepAlive, переподключение |
-| `turns.py` | Реплика преподавателя копится до речи студента; ответ по паузе 0,7–1,1 с или UtteranceEnd; фильтр «угу/так»; эхо-фильтр |
+| `turns.py` | Реплика преподавателя копится до речи студента; ответ по паузе 0,7–1,1 с или UtteranceEnd; фильтр «угу/так»; режим «только вопросы» (`is_request`); продолжение реплики → continuation (дополнение); эхо-фильтр |
 | `answer_engine.py` | Промпты (учёба/собес), формат «Скажи + Если уточнят», цепочка провайдеров с фолбэком |
 | `cc_engine.py` | Пул `claude -p --input-format stream-json` с системным промптом-файлом, обновление после 20 вопросов |
 | `context_pack.py` | Папка предмета → работы (подпапки) + `_common.md`; режим собеседования — profile/job |

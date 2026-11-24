@@ -57,11 +57,20 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
 .ans.empty{color:var(--muted);font-size:calc(var(--font)*.75)}
 .cursor{display:inline-block;width:.5em;height:1em;background:var(--blue);vertical-align:-.12em;animation:pulse 1s infinite;margin-left:2px}
 .meta{font-size:12.5px;color:var(--muted);margin-top:10px}
-.history{border-top:1px solid var(--line);max-height:34%;overflow:auto;padding:6px 10px}
-.hitem{padding:7px 8px;border-radius:8px;cursor:pointer;color:var(--ink2);font-size:14px}
-.hitem:hover{background:var(--panel2)}
-.hitem .hq{color:var(--ink);font-weight:550}
-.hitem.replaced{opacity:.55}
+/* лента ответов: карточки не перезаписываются, новая — ниже */
+.card.feedcard{position:relative}
+#feed::after{content:"";display:block;height:55vh}
+.acard{border:1px solid var(--line);border-left:4px solid #3a4148;border-radius:10px;padding:10px 14px 8px;margin:0 0 12px;background:var(--panel)}
+.acard.latest{border-left-color:var(--blue)}
+.acard.addon{margin-left:22px;border-left-color:#6a5a2a}
+.acard.addon.latest{border-left-color:var(--say)}
+.acard.stopped{opacity:.6}
+.acard .q{margin-bottom:7px}
+.acard .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:0 6px;margin-right:6px;vertical-align:1px;background:var(--amber-bg);color:var(--amber)}
+.acard .tm{float:right;font-size:12px;color:var(--muted);margin-left:8px}
+.newpill{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:none;background:var(--blue);border-color:var(--blue);color:#06101d;font-weight:700;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:5}
+.newpill.show{display:block}
+.msg.skip .txt{color:var(--muted);font-size:12.5px;font-style:italic}
 .chat{overflow:auto;padding:10px 12px;flex:1;font-size:15.5px}
 .msg{margin:0 0 9px}
 .msg .who{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:1px}
@@ -101,14 +110,12 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
   </div>
   <div class="banners" id="banners"></div>
   <div class="main">
-    <div class="card">
-      <h4>Подсказка <span class="spacer"></span><span id="fontCtl"><button id="fMinus" style="padding:1px 8px">A−</button> <button id="fPlus" style="padding:1px 8px">A+</button></span></h4>
+    <div class="card feedcard">
+      <h4>Подсказки <span class="small" id="feedState" style="text-transform:none;letter-spacing:0"></span><span class="spacer"></span><span id="fontCtl"><button id="fMinus" style="padding:1px 8px">A−</button> <button id="fPlus" style="padding:1px 8px">A+</button></span></h4>
       <div class="answer-wrap" id="answerWrap">
-        <div class="q" id="q"></div>
-        <div class="ans empty" id="ans">Жду вопрос преподавателя. Ответ появится сам, когда он договорит. Или жми <kbd>⌘⇧A</kbd>.</div>
-        <div class="meta" id="meta"></div>
+        <div id="feed"><div class="ans empty" id="emptyNote">Жду вопрос преподавателя. Ответ появится сам, когда он спросит и договорит. Или жми <kbd>⌘⇧A</kbd>.</div></div>
       </div>
-      <div class="history" id="history"></div>
+      <button class="newpill" id="newPill">↓ Новый ответ <kbd>⌘⇧J</kbd></button>
     </div>
     <div class="card chatcard">
       <h4>Разговор <span class="spacer"></span><span class="small" id="srcInfo"></span></h4>
@@ -118,7 +125,7 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
   <div class="bottom">
     <input id="askInput" placeholder="Напиши вопрос и нажми Enter — если распознавание подвело">
     <button id="btnSend">Спросить</button>
-    <span class="hint">⌃⇧1…5 — работа · ⌘⇧M — пауза · ⌘⇧\ — скрыть окно</span>
+    <span class="hint">⌃⇧1…9 — работа · ⌘⇧J — к новому ответу · ⌘⇧M — пауза · ⌘⇧\ — скрыть окно</span>
   </div>
 </div>
 
@@ -141,6 +148,8 @@ kbd{font:12px ui-monospace,Menlo,monospace;background:#2a2f35;border:1px solid #
   <div class="row"><button id="btnAudioTest">Проверить звук</button><button id="btnPrivacy">Открыть разрешения</button><button id="btnRestartAudio">Перезапустить звук</button></div>
   <div class="small" id="audioInfo"></div>
   <div class="row"><label><input type="checkbox" id="autoChk"> Отвечать автоматически, когда преподаватель договорил</label></div>
+  <div class="row"><label>Автоответ:</label><select id="autoModeSel"><option value="questions">только на вопросы и просьбы</option><option value="all">на любую реплику</option></select></div>
+  <div class="small">«Только на вопросы»: рассуждения преподавателя вслух без вопроса не создают подсказку (видны в разговоре). Нужно ответить на них — жми ⌘⇧A.</div>
   <div class="row"><label><input type="checkbox" id="micChk"> Слушать мой микрофон (нужно, чтобы модель видела мои ответы)</label></div>
 
   <h3>Материалы</h3>
@@ -164,8 +173,10 @@ const $ = id => document.getElementById(id);
 const API = location.origin;
 const E = window.electronAPI || null;
 let ST = {settings:{}, engine:{}, listen:{}, context:{}};
-let cur = null;           // текущий ответ {id, question, text, done}
-const answers = new Map();
+const answers = new Map();   // id -> {id, question, text, done, kind, el}
+let pending = 0, lastJumpAt = 0, lastMeSpeech = 0, manualHold = false, latestId = null;
+const MIN_READ_MS = 6000;     // новый ответ не уводит экран, пока предыдущий на экране меньше 6 с
+const ME_QUIET_MS = 2500;     // и пока студент говорит (и 2,5 с после)
 let interimEl = null;
 
 async function post(path, body){ try{ const r = await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})}); return await r.json(); }catch(e){ toast('Нет связи с ассистентом','error'); return {}; } }
@@ -195,19 +206,46 @@ function toast(text, level='info'){ const t=$('toast'); t.textContent=text; t.cl
 function setFont(px){ px=Math.max(15,Math.min(40,px)); document.documentElement.style.setProperty('--font',px+'px'); ST.settings.font=px; }
 function pct(db){ if(db==null) return 0; return Math.max(0,Math.min(100,(db+60)*100/55)); }
 
-// ---------- отрисовка ----------
-function renderAnswer(){
-  if(!cur){ return; }
-  $('q').innerHTML = cur.question ? `<b>${cur.reason==='typed'?'Вопрос':'Преподаватель'}:</b> ${esc(cur.question)}${cur.shot?' <span class="small">· со скриншотом</span>':''}` : '';
-  const a=$('ans'); a.classList.toggle('empty', !cur.text && !cur.done);
-  a.innerHTML = cur.text ? md(cur.text) + (cur.done?'':'<span class="cursor"></span>') : (cur.error?`<span style="color:var(--red)">${esc(cur.error)}</span>`:'<span class="cursor"></span>');
-  $('meta').textContent = cur.metaText || '';
+// ---------- лента ответов ----------
+function cardHtml(a){
+  const who = a.reason==='typed'?'Вопрос':(a.reason==='screenshot'?'Скриншот':'Преподаватель');
+  const tm = new Date(a.t||Date.now()).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const qtext = a.kind==='addon' ? (a.added||a.question) : a.question;
+  const tag = a.kind==='addon' ? '<span class="tag">Дополнение</span>' : '';
+  const stop = a.stopped ? ' <span class="small">· остановлен</span>' : '';
+  const body = a.text ? md(a.text) + (a.done?'':'<span class="cursor"></span>') : (a.error?`<span style="color:var(--red)">${esc(a.error)}</span>`:'<span class="cursor"></span>');
+  return `<div class="q"><span class="tm">${tm}</span>${tag}<b>${who}:</b> ${esc(qtext||'')}${a.shot?' <span class="small">· со скриншотом</span>':''}${stop}</div><div class="ans">${body}</div><div class="meta">${a.metaText||''}</div>`;
 }
-function renderHistory(){
-  const h=$('history'); h.innerHTML='';
-  const list=[...answers.values()].filter(a=>!cur||a.id!==cur.id).slice(-8).reverse();
-  for(const a of list){ const d=document.createElement('div'); d.className='hitem'+(a.replaced?' replaced':''); d.innerHTML=`<span class="hq">${esc(a.question.slice(0,110))}</span><br>${esc((a.text||'').replace(/\*\*/g,'').slice(0,140))}`; d.onclick=()=>{cur=a; renderAnswer(); renderHistory();}; h.appendChild(d); }
+function renderCard(a){ if(a.el) a.el.innerHTML = cardHtml(a); }
+function markLatest(){ for(const a of answers.values()) if(a.el) a.el.classList.toggle('latest', a.id===latestId); }
+function latestEl(){ const a=answers.get(latestId); return a&&a.el; }
+function meBusy(){ return Date.now()-lastMeSpeech < ME_QUIET_MS; }
+function jumpLatest(force){
+  const el=latestEl(); if(!el) return;
+  el.scrollIntoView({block:'start', behavior: force?'auto':'smooth'});
+  lastJumpAt=Date.now(); pending=0; manualHold=false; updatePill();
 }
+function updatePill(){ const p=$('newPill'); p.classList.toggle('show', pending>0); p.innerHTML = (pending>1?`↓ Новых ответов: ${pending}`:'↓ Новый ответ')+' <kbd>⌘⇧J</kbd>';
+  $('feedState').textContent = pending>0 ? (meBusy()?'· ты говоришь — держу экран':'· держу экран, пока читаешь') : ''; }
+function addCard(a, replaceId){
+  const feed=$('feed'); const empty=$('emptyNote'); if(empty) empty.remove();
+  const old = replaceId && answers.get(replaceId);
+  if(old && old.el){ a.el=old.el; answers.delete(replaceId); }
+  else { a.el=document.createElement('div'); feed.appendChild(a.el); }
+  a.el.className='acard'+(a.kind==='addon'?' addon':''); a.el.id='a-'+a.id;
+  answers.set(a.id,a); latestId=a.id; renderCard(a); markLatest();
+  while(feed.children.length>40){ const f=feed.firstElementChild; for(const [k,v] of answers) if(v.el===f) answers.delete(k); f.remove(); }
+  if(old) return;                       // заменили свежий ответ на месте — экран не трогаем
+  const firstEver = !lastJumpAt;
+  if(firstEver || (!meBusy() && !manualHold && Date.now()-lastJumpAt>=MIN_READ_MS)) jumpLatest(firstEver);
+  else { pending++; updatePill(); }
+}
+// не дочитал или говоришь — ждём; освободился — сами переходим к новому
+setInterval(()=>{ if(pending>0 && !manualHold && !meBusy() && Date.now()-lastJumpAt>=MIN_READ_MS) jumpLatest(); else if(pending>0) updatePill(); }, 400);
+$('answerWrap').addEventListener('wheel',()=>{ const w=$('answerWrap'); setTimeout(()=>{ const el=latestEl(); if(!el) return;
+  const r=el.getBoundingClientRect(), wr=w.getBoundingClientRect(); manualHold = r.top > wr.bottom-40 || r.bottom < wr.top+40; if(!manualHold && pending){ pending=0; updatePill(); } },150); }, {passive:true});
+$('newPill').onclick=()=>jumpLatest();
+
 function addLine(who, text, cls){
   const c=$('chat'); const atBottom = c.scrollHeight-c.scrollTop-c.clientHeight<60;
   if(interimEl && interimEl.dataset.who===who){ interimEl.remove(); interimEl=null; }
@@ -277,6 +315,7 @@ function renderStatus(){
   $('engineInfo').textContent = `Сейчас: ${En.provider||'—'} / ${En.model||'—'}` + (En.ttft?` · последний ответ начался через ${En.ttft.toFixed(2)} с`:'') + (En.has_anthropic_key?' · ключ API сохранён':'');
   $('sysSel').value = Se.system_source||'tap';
   $('autoChk').checked = Se.auto!==false;
+  if(!$('autoModeSel').matches(':focus')) $('autoModeSel').value = Se.auto_mode||'questions';
   $('micChk').checked = Se.mic_enabled!==false;
   $('shotSel').value = String(Se.shot_display||1);
   const P=C.pack||{}; $('packInfo').textContent = P.folder ? `${P.folder} — работ: ${(P.labs||[]).length}; контекст сейчас: ${C.title||'—'}, ${Math.round((C.chars||0)/1000)} тыс. символов` : 'Папка не выбрана';
@@ -288,7 +327,7 @@ async function audioTest(){ toast('Проверяю: сейчас прозвуч
 
 // ---------- события ----------
 function applyHello(d){ ST={...ST,...d}; setFont(d.settings.font||22); (d.lines||[]).forEach(l=>addLine(l.who,l.text,clsFor(l.who)));
-    (d.answers||[]).forEach(a=>{ answers.set(a.id,{id:a.id,question:a.question,text:a.answer,done:true,reason:a.reason,shot:a.shot}); }); const last=[...answers.values()].pop(); if(last){cur=last; renderAnswer(); renderHistory();} renderStatus(); }
+    (d.answers||[]).filter(a=>a.status!=='replaced').forEach(a=>{ addCard({id:a.id,question:a.question,text:a.answer,done:true,reason:a.reason,shot:a.shot,kind:a.kind,added:a.added,t:(a.t||0)*1000,stopped:a.status==='stopped'}); }); if(latestId) jumpLatest(true); renderStatus(); }
 function connect(){
   if(location.search.includes('snapshot')){ fetch(API+'/state').then(r=>r.json()).then(applyHello); return; }
   const es=new EventSource(API+'/events');
@@ -299,14 +338,16 @@ function connect(){
   es.addEventListener('settings',e=>{ ST.settings=JSON.parse(e.data); renderStatus(); });
   es.addEventListener('stt',e=>{ const d=JSON.parse(e.data); ST.listen.stt={...(ST.listen.stt||{}),[d.source]:d.state}; renderStatus(); });
   es.addEventListener('levels',e=>{ const d=JSON.parse(e.data); $('mSys').style.width=pct(d.system)+'%'; $('mMic').style.width=pct(d.mic)+'%'; if(ST.listen.system && d.system_signal && !ST.listen.system.signal){ ST.listen.system.signal=true; renderStatus(); } });
-  es.addEventListener('interim',e=>{ const d=JSON.parse(e.data); setInterim(d.who,d.text); });
-  es.addEventListener('line',e=>{ const d=JSON.parse(e.data); addLine(d.who,d.text,clsFor(d.who)); });
-  es.addEventListener('answer_start',e=>{ const d=JSON.parse(e.data); if(cur && !cur.done){ cur.replaced=true; cur.done=true; } cur={id:d.id,question:d.question,reason:d.reason,shot:d.shot,text:'',done:false}; answers.set(d.id,cur); renderAnswer(); renderHistory(); $('answerWrap').scrollTop=0; });
-  es.addEventListener('answer_delta',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(!a) return; a.text+=d.text; if(cur&&cur.id===d.id) renderAnswer(); });
-  es.addEventListener('answer_end',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(!a) return; a.done=true; if(d.replaced){a.replaced=true;} else { a.metaText=`первый токен ${d.ttft} с · всего ${d.total} с · ${d.model}`; ST.engine.ttft=d.ttft; renderStatus(); } if(cur&&cur.id===d.id) renderAnswer(); renderHistory(); });
-  es.addEventListener('answer_error',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(a){a.error=d.message; a.done=true;} if(cur&&cur.id===d.id) renderAnswer(); toast(d.message,'error'); });
+  es.addEventListener('interim',e=>{ const d=JSON.parse(e.data); if(d.who==='Я') lastMeSpeech=Date.now(); setInterim(d.who,d.text); });
+  es.addEventListener('line',e=>{ const d=JSON.parse(e.data); if(d.who==='Я') lastMeSpeech=Date.now(); addLine(d.who,d.text,clsFor(d.who)); });
+  es.addEventListener('skipped',e=>{ const d=JSON.parse(e.data); const c=$('chat'); const m=document.createElement('div'); m.className='msg skip'; m.innerHTML='<div class="txt">без вопроса — подсказку не делаю (нужна — ⌘⇧A)</div>'; c.appendChild(m); c.scrollTop=c.scrollHeight; });
+  es.addEventListener('jump',()=>jumpLatest());
+  es.addEventListener('answer_start',e=>{ const d=JSON.parse(e.data); addCard({id:d.id,question:d.question,reason:d.reason,shot:d.shot,kind:d.kind,added:d.added,text:'',done:false,t:Date.now()}, d.replaces); });
+  es.addEventListener('answer_delta',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(!a) return; a.text+=d.text; renderCard(a); });
+  es.addEventListener('answer_end',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(!a) return; a.done=true; if(d.replaced){ a.stopped=true; a.el&&a.el.classList.add('stopped'); } else { a.metaText=`первый токен ${d.ttft} с · всего ${d.total} с · ${d.model}`; ST.engine.ttft=d.ttft; renderStatus(); } renderCard(a); });
+  es.addEventListener('answer_error',e=>{ const d=JSON.parse(e.data); const a=answers.get(d.id); if(a){a.error=d.message; a.done=true; renderCard(a);} toast(d.message,'error'); });
   es.addEventListener('toast',e=>{ const d=JSON.parse(e.data); toast(d.text,d.level); });
-  es.addEventListener('reset',()=>{ $('chat').innerHTML=''; answers.clear(); cur=null; $('q').innerHTML=''; $('ans').innerHTML='Разговор очищен.'; $('history').innerHTML=''; });
+  es.addEventListener('reset',()=>{ $('chat').innerHTML=''; answers.clear(); latestId=null; pending=0; lastJumpAt=0; updatePill(); $('feed').innerHTML='<div class="ans empty" id="emptyNote">Разговор очищен.</div>'; });
   es.onerror=()=>{ $('dotListen').className='dot err'; $('lblListen').textContent='Нет связи…'; };
 }
 
@@ -327,6 +368,7 @@ $('btnSelftest').onclick=async()=>{ toast('Проверяю модель…'); a
 $('btnKey').onclick=async()=>{ const k=$('keyAnth').value.trim(); if(!k) return; toast('Сохраняю ключ и проверяю…'); const r=await post('/keys',{anthropic:k}); $('keyAnth').value=''; };
 $('sysSel').onchange=e=>post('/settings',{system_source:e.target.value});
 $('autoChk').onchange=e=>post('/settings',{auto:e.target.checked});
+$('autoModeSel').onchange=e=>post('/settings',{auto_mode:e.target.value});
 $('micChk').onchange=e=>post('/settings',{mic_enabled:e.target.checked});
 $('shotSel').onchange=e=>post('/settings',{shot_display:parseInt(e.target.value)});
 $('btnAudioTest').onclick=audioTest;

@@ -8,6 +8,11 @@
 - любой новый промежуточный текст преподавателя сбрасывает таймер, а если ответ уже пишется —
   после паузы ответ перегенерируется по всей реплике (вопрос оказался длиннее).
 Короткие реплики без вопроса («так», «угу», «хорошо») не запускают ответ.
+Режим «только вопросы» (по умолчанию): рассуждения преподавателя вслух без вопроса или просьбы
+не запускают ответ — только реплики с «?», вопросительным словом в начале фразы или просьбой
+(«расскажите», «покажите», «объясните»…).
+Продолжение той же реплики после уже запущенного ответа помечается continuation=True: app решает,
+заменить свежий ответ на месте или дать короткое «Дополнение» отдельной карточкой.
 Ручной запуск (хоткей) работает всегда.
 
 Если системного звука нет (режим «один микрофон»), весь текст идёт из микрофона, и автозапуск
@@ -46,6 +51,34 @@ def looks_like_question(text: str) -> bool:
     return any(re.search(rf"(^|\s){re.escape(w)}", words) for w in QUESTION_WORDS)
 
 
+LEAD_WORDS = {"а", "ну", "так", "и", "вот", "хорошо", "ладно", "давайте", "окей", "ок", "да", "угу", "ага", "но",
+              "тогда", "смотрите", "слушайте"}
+INTERROG = {"как", "почему", "зачем", "какой", "какая", "какое", "какие", "каким", "какую", "каков", "какова", "каковы",
+            "сколько", "где", "когда", "откуда", "куда", "чем", "что", "кто", "чего", "чему", "можете", "можешь"}
+REQUEST_STEMS = ("расскаж", "покаж", "объясн", "поясн", "опиши", "опишите", "назов", "приведи", "приведите", "открой",
+                 "прокрут", "докаж", "обоснуй", "сравни", "сравните", "уточни", "уточните", "продемонстр", "скажите",
+                 "скажи ")
+
+
+def is_request(text: str) -> bool:
+    """Вопрос или просьба к студенту (а не рассуждение вслух)."""
+    t = text.strip()
+    if not t:
+        return False
+    if "?" in t:
+        return True
+    low = " " + t.lower()
+    if any(re.search(r"[\s,.(«]" + re.escape(r), low) for r in REQUEST_STEMS):
+        return True
+    for sent in re.split(r"[.!…;:]+", t):
+        w = re.findall(r"[а-яёa-z0-9]+", sent.lower())
+        while w and w[0] in LEAD_WORDS:
+            w = w[1:]
+        if len(w) >= 3 and w[0] in INTERROG:
+            return True
+    return False
+
+
 def is_filler(text: str) -> bool:
     n = _norm(text)
     if not n:
@@ -75,6 +108,9 @@ class TurnManager:
         self.generating_for = ""
         self._timer: Optional[asyncio.Task] = None
         self.auto = True
+        self.auto_mode = "questions"          # questions | all
+        self.turn_id = 0                      # растёт с каждой новой репликой преподавателя
+        self.last_trigger_turn = -1
         self.mic_only = False
         self.teacher_label = "Преподаватель"
 
@@ -108,14 +144,21 @@ class TurnManager:
             return
         if not self.auto and reason != "manual":
             return
+        continuation = self.last_trigger_turn == self.turn_id and bool(self.last_triggered)
+        added = q[len(self.last_triggered):].strip() if continuation and q.startswith(self.last_triggered) else q
         if reason != "manual":
-            if is_filler(q):
+            if is_filler(q) or (continuation and is_filler(added)):
                 logger.info(f"Пропуск (не вопрос): {q!r}")
                 return
             if self.mic_only and not looks_like_question(q):
                 return
+            if self.auto_mode == "questions" and not is_request(added if continuation else q):
+                logger.info(f"Пропуск (рассуждение, не вопрос): {(added if continuation else q)[:120]!r}")
+                await self.on_event("skipped", {"text": (added if continuation else q)[:200]})
+                return
         self.last_triggered = q
-        await self.on_trigger(q, reason)
+        self.last_trigger_turn = self.turn_id
+        await self.on_trigger(q, reason, continuation=continuation, added=added)
 
     # ---------- события распознавания ----------
 
@@ -139,6 +182,7 @@ class TurnManager:
                 if self.turn_closed:
                     self.teacher_turn = []
                     self.turn_closed = False
+                    self.turn_id += 1
                 self.teacher_turn.append(text)
             elif not is_filler(text):
                 # студент заговорил по делу — следующая речь преподавателя будет новой репликой

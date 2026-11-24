@@ -61,7 +61,7 @@ PORT = int(os.getenv("AXEL_PORT", "8765"))
 
 def load_settings() -> dict:
     s = {"pack_folder": str(DEFAULT_PACK) if DEFAULT_PACK.exists() else "", "active_lab": 0,
-         "mode": "study", "model": "", "system_source": "tap", "auto": True, "font": 22, "mic_enabled": True}
+         "mode": "study", "model": "", "system_source": "tap", "auto": True, "auto_mode": "questions", "font": 22, "mic_enabled": True}
     try:
         s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
     except Exception:
@@ -127,6 +127,7 @@ class App:
         self.streams: list[DeepgramStream] = []
         self.stt_state: dict[str, str] = {}
         self.gen_task: Optional[asyncio.Task] = None
+        self.gen_tasks: dict[str, asyncio.Task] = {}
         self.answers: list[dict] = []
         self.pending_shot: Optional[str] = None
         self.level_task: Optional[asyncio.Task] = None
@@ -241,7 +242,7 @@ class App:
                 "system": self.sys.status() if self.sys else None,
                 "system_source": S.get("system_source"), "stt": self.stt_state,
                 "tap_available": find_audiotee() is not None, "tap_check": self.tap_check,
-                "auto": self.turns.auto}
+                "auto": self.turns.auto, "auto_mode": self.turns.auto_mode}
 
     async def _levels_loop(self):
         silent_since = time.time()
@@ -282,27 +283,58 @@ class App:
 
     # ----- ответы -----
 
-    async def on_trigger(self, question: str, reason: str, screenshot: str | None = None):
-        if self.gen_task and not self.gen_task.done():
-            self.gen_task.cancel()
+    # Ответ на экране не перезаписывается: если преподаватель продолжил ту же реплику, свежий ответ
+    # (моложе REPLACE_WINDOW с) заменяется на месте, а более старый остаётся и ниже идёт «Дополнение».
+    REPLACE_WINDOW = 1.5
+    MAX_PARALLEL = 2
+
+    async def on_trigger(self, question: str, reason: str, screenshot: str | None = None,
+                         continuation: bool = False, added: str = ""):
         shot = screenshot or self.pending_shot
         self.pending_shot = None
-        aid = uuid.uuid4().hex[:8]
+        now = time.time()
+        last = self.answers[-1] if self.answers else None
+        kind, replaces, note = "answer", None, ""
         prev = next((a["answer"] for a in reversed(self.answers) if a.get("answer")), "")
-        item = {"id": aid, "question": question, "reason": reason, "answer": "", "t": time.time(),
-                "shot": bool(shot), "status": "streaming"}
+        if continuation and last and last.get("status") in ("streaming", "done"):
+            if now - last["t"] < self.REPLACE_WINDOW and last.get("status") == "streaming":
+                replaces = last["id"]
+                t = self.gen_tasks.get(last["id"])
+                if t and not t.done():
+                    t.cancel()
+                last["status"] = "replaced"
+            else:
+                kind = "addon"
+                prev = last.get("answer") or prev
+                note = ("Преподаватель продолжил ту же реплику, а подсказка на неё уже на экране (ПРЕДЫДУЩАЯ ПОДСКАЗКА). "
+                        f"Дай короткое ДОПОЛНЕНИЕ только к новой части: «{added[:400]}». "
+                        "Формат тот же, но «Скажи:» — 1–2 предложения, «Если уточнят:» — 1–2 пункта; не повторяй уже сказанное.")
+        # не держим больше MAX_PARALLEL генераций: самые старые останавливаем
+        running = [(a_id, t) for a_id, t in self.gen_tasks.items() if not t.done()]
+        while len(running) >= self.MAX_PARALLEL:
+            a_id, t = running.pop(0)
+            t.cancel()
+        aid = uuid.uuid4().hex[:8]
+        item = {"id": aid, "question": question, "reason": reason, "answer": "", "t": now,
+                "shot": bool(shot), "status": "streaming", "kind": kind, "added": added if kind == "addon" else "",
+                "replaces": replaces}
         self.answers.append(item)
         self.answers = self.answers[-50:]
-        await bus.emit("answer_start", {k: item[k] for k in ("id", "question", "reason", "shot")})
-        self.gen_task = asyncio.create_task(self._generate(item, prev, shot))
+        await bus.emit("answer_start", {k: item[k] for k in ("id", "question", "reason", "shot", "kind", "added", "replaces")})
+        task = asyncio.create_task(self._generate(item, prev, shot, note))
+        self.gen_tasks = {k: v for k, v in self.gen_tasks.items() if not v.done()}
+        self.gen_tasks[aid] = task
+        self.gen_task = task
 
-    async def _generate(self, item: dict, prev: str, shot: str | None):
+    async def _generate(self, item: dict, prev: str, shot: str | None, extra_note: str = ""):
         t0 = time.perf_counter()
         first = None
         buf = ""
         last_flush = 0.0
         try:
             note = "К вопросу приложен скриншот экрана студента (то, что видит преподаватель)." if shot else ""
+            if extra_note:
+                note = (note + "\n" + extra_note).strip()
             async for ch in self.engine.stream_answer(item["question"], self.turns.dialogue(12), prev, shot, note):
                 if first is None:
                     first = time.perf_counter() - t0
@@ -320,9 +352,12 @@ class App:
             await bus.emit("answer_end", {"id": item["id"], "ttft": round(first or 0, 2),
                                           "total": round(time.perf_counter() - t0, 2),
                                           "provider": st.provider, "model": st.model})
-            self._log(f"> **Вопрос:** {item['question']}\n\n{item['answer']}\n")
+            tag = "Дополнение" if item.get("kind") == "addon" else "Вопрос"
+            q = item.get("added") if item.get("kind") == "addon" else item["question"]
+            self._log(f"> **{tag}:** {q}\n\n{item['answer']}\n")
         except asyncio.CancelledError:
-            item["status"] = "replaced"
+            if item["status"] != "replaced":
+                item["status"] = "stopped"
             if buf:
                 await bus.emit("answer_delta", {"id": item["id"], "text": buf})
             await bus.emit("answer_end", {"id": item["id"], "replaced": True})
@@ -382,6 +417,8 @@ async def lifespan(app: FastAPI):
 
 
 async def _startup():
+    A.turns.auto = S.get("auto", True) is not False
+    A.turns.auto_mode = S.get("auto_mode", "questions") if S.get("auto_mode") in ("questions", "all") else "questions"
     try:
         await A.load_context()
     except Exception as e:
@@ -462,8 +499,16 @@ async def ask(request: Request):
 
 @app.post("/cancel")
 async def cancel():
-    if A.gen_task and not A.gen_task.done():
-        A.gen_task.cancel()
+    for t in list(A.gen_tasks.values()):
+        if not t.done():
+            t.cancel()
+    return {"ok": True}
+
+
+@app.post("/ui/jump")
+async def ui_jump():
+    """Хоткей ⌘⇧J: прокрутить ленту к самому новому ответу."""
+    await bus.emit("jump", {})
     return {"ok": True}
 
 
@@ -570,11 +615,13 @@ async def set_pack(request: Request):
 async def set_settings(request: Request):
     body = await _json(request)
     restart_audio = False
-    for k in ("auto", "font", "shot_display"):
+    for k in ("auto", "font", "shot_display", "auto_mode"):
         if k in body:
             S[k] = body[k]
     if "auto" in body:
         A.turns.auto = bool(body["auto"])
+    if body.get("auto_mode") in ("questions", "all"):
+        A.turns.auto_mode = body["auto_mode"]
     if "system_source" in body and body["system_source"] in ("tap", "blackhole", "none", "test"):
         S["system_source"] = body["system_source"]
         restart_audio = True

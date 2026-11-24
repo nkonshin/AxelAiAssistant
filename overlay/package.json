@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "com.axel.interview-assistant",
-    "productName": "Notes Helper",
+    "productName": "FlackonAI",
     "directories": {
       "output": "dist"
     },
@@ -46,7 +46,7 @@
       }
     },
     "dmg": {
-      "title": "Notes Helper"
+      "title": "FlackonAI"
     }
   },
   "dependencies": {

@@ -5,7 +5,7 @@
 - TapSource — системный звук через Core Audio tap (утилита audiotee): всё, что играет на Mac,
   в том числе голос преподавателя из Zoom. Не нужен BlackHole и Multi-Output.
   Разрешение: «Запись системного звука» для приложения, из которого запущен ассистент
-  (Terminal или Notes Helper.app — имя приходит в AXEL_HOST_APP).
+  (Terminal или FlackonAI.app — имя приходит в AXEL_HOST_APP).
   Без разрешения tap отдаёт нули — это ловит проверка /audio/test.
 - BlackHoleSource — старый путь через виртуальное устройство (если tap не подошёл).
 

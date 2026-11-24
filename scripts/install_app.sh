@@ -1,11 +1,11 @@
 #!/bin/bash
-# Собрать «Notes Helper.app» (окно ассистента v2) и поставить в /Applications.
+# Собрать «FlackonAI.app» (окно ассистента v2) и поставить в /Applications.
 # Приложение само запускает бэкенд из ЭТОЙ папки проекта (backend/ + backend/.venv),
 # поэтому правки бэкенда и ui.html пересборки не требуют — только правки overlay/src/main.
 # После пересборки macOS может заново спросить разрешения (подпись ad-hoc меняется).
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="Notes Helper"
+APP_NAME="FlackonAI"
 DEST="/Applications"
 [ -w "$DEST" ] || DEST="$HOME/Applications"
 mkdir -p "$DEST" "$HOME/.axel-assistant"
@@ -30,7 +30,7 @@ echo "$PROJECT_DIR" > "$HOME/.axel-assistant/project_dir"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST/$APP_NAME.app" || true
 
 # ярлык на рабочем столе
-ln -sfn "$DEST/$APP_NAME.app" "$HOME/Desktop/Ассистент"
+ln -sfn "$DEST/$APP_NAME.app" "$HOME/Desktop/$APP_NAME"
 
-echo "Готово: $DEST/$APP_NAME.app (ярлык «Ассистент» на рабочем столе, Spotlight: Notes Helper)."
+echo "Готово: $DEST/$APP_NAME.app (ярлык на рабочем столе, Spotlight: FlackonAI)."
 echo "Первый запуск: разреши микрофон и «Запись системного звука» для ${APP_NAME}."

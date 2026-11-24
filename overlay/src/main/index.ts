@@ -52,7 +52,7 @@ function placeOn(d: Electron.Display): void {
   win.setBounds({ x: wa.x + Math.round((wa.width - w) / 2), y: wa.y + Math.round((wa.height - h) / 2), width: w, height: h })
 }
 
-const LOADING_HTML = `<!doctype html><meta charset="utf-8"><title>Заметки</title>
+const LOADING_HTML = `<!doctype html><meta charset="utf-8"><title>FlackonAI</title>
 <body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#111315;color:#a9b0b7;font:16px -apple-system,system-ui,sans-serif">
 Запускаю ассистента…</body>`
 
@@ -60,7 +60,7 @@ function createWindow(): void {
   win = new BrowserWindow({
     width: 1200,
     height: 900,
-    title: 'Заметки',
+    title: 'FlackonAI',
     backgroundColor: '#111315',
     show: false,
     webPreferences: {
@@ -127,7 +127,7 @@ if (!gotLock) {
 app.whenReady().then(async () => {
   if (!gotLock) return
   if (process.platform === 'darwin') app.dock.hide()
-  app.setName('Notes Helper')
+  app.setName('FlackonAI')
   let backendOk = false
   createWindow()
   registerHotkeys()

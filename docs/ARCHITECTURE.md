@@ -481,7 +481,7 @@ API: `/events` (SSE), `/state`, `/listen/{start,stop,toggle,restart}`, `/ask`, `
 `/model`, `/keys`, `/selftest`, `/pack`, `/settings`, `/audio/test`, `/open-privacy`, `/reset`, `/debug/inject` (тест без Zoom).
 
 **Приложение (24.11.2026):** `scripts/install_app.sh` → `npm run app` (electron-vite + electron-builder `--mac dir`) →
-`/Applications/Notes Helper.app` + ярлык «Ассистент» на рабочем столе. Подпись ad-hoc (`identity: "-"`), без hardened runtime;
+`/Applications/FlackonAI.app` + ярлык на рабочем столе. Подпись ad-hoc (`identity: "-"`), без hardened runtime;
 в Info.plist `LSUIElement` (нет Dock) и `NSMicrophoneUsageDescription` / `NSAudioCaptureUsageDescription` — без них macOS
 не даёт процессам приложения (python → audiotee) микрофон и системный звук. `child_process.ts` в собранном режиме берёт
 живой бэкенд из папки проекта (`~/.axel-assistant/project_dir`, иначе путь сборки `__AXEL_PROJECT_DIR__`) и его `.venv`,
